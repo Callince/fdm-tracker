@@ -18,9 +18,11 @@ _settings = get_settings()
 engine = create_engine(
     _settings.database_url,
     pool_pre_ping=True,
+    pool_recycle=300,
     pool_size=10,
     max_overflow=20,
     future=True,
+    connect_args={"keepalives": 1, "keepalives_idle": 30, "keepalives_interval": 10, "keepalives_count": 3},
 )
 
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
