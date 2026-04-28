@@ -20,9 +20,14 @@ export function Signup({ onSubmitted, onBack }: Props) {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    window.fdm.listPublicTeams().then((r) => {
-      if (r.ok && r.data) setTeams(r.data.teams);
-    });
+    const load = () => {
+      window.fdm.listPublicTeams().then((r) => {
+        if (r.ok && r.data) setTeams(r.data.teams);
+      });
+    };
+    load();
+    window.addEventListener("focus", load);
+    return () => window.removeEventListener("focus", load);
   }, []);
 
   async function submit(e: FormEvent) {
