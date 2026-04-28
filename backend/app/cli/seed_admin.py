@@ -6,6 +6,7 @@ Usage:
 from __future__ import annotations
 
 import sys
+from datetime import datetime, timezone
 
 from sqlalchemy import select
 
@@ -22,8 +23,15 @@ def main() -> int:
 
     with SessionLocal() as db:
         user = db.execute(select(User).where(User.email == email)).scalar_one_or_none()
+        now = datetime.now(timezone.utc)
         if user is None:
-            user = User(name=name, email=email, password_hash=hash_password(password), role="admin")
+            user = User(
+                name=name,
+                email=email,
+                password_hash=hash_password(password),
+                role="admin",
+                email_verified_at=now,
+            )
             db.add(user)
             print(f"created admin {email}")
         else:
@@ -31,6 +39,8 @@ def main() -> int:
             user.password_hash = hash_password(password)
             user.role = "admin"
             user.is_active = True
+            if user.email_verified_at is None:
+                user.email_verified_at = now
             print(f"promoted/updated admin {email}")
         db.commit()
     return 0
