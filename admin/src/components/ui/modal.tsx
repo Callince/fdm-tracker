@@ -37,17 +37,20 @@ export function Modal({
 }: Props) {
   const titleId = useId();
   const ref = useRef<HTMLDivElement | null>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") onCloseRef.current();
     };
     document.addEventListener("keydown", onKey);
-    // Focus the first focusable element for accessibility.
+    // Focus the first input so users can type immediately. Prefer inputs
+    // over buttons so focus doesn't land on the close (X) button.
     const t = setTimeout(() => {
       const first = ref.current?.querySelector<HTMLElement>(
-        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+        'input:not([type="hidden"]), select, textarea, [href], button, [tabindex]:not([tabindex="-1"])',
       );
       first?.focus();
     }, 20);
@@ -55,7 +58,7 @@ export function Modal({
       document.removeEventListener("keydown", onKey);
       clearTimeout(t);
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 
