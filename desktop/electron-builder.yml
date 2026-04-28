@@ -1,0 +1,39 @@
+appId: com.fourdm.tracker
+productName: FDM Tracker
+directories:
+  output: release
+  buildResources: resources
+files:
+  - out/**
+  - package.json
+asar: true
+asarUnpack:
+  - "**/*.node"
+  - "**/better-sqlite3/**"
+  - "**/uiohook-napi/**"
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  # electron-builder auto-generates .ico from a 256×256+ PNG.
+  icon: resources/icon.png
+  artifactName: ${productName}-${version}-setup-${arch}.${ext}
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  perMachine: false
+  deleteAppDataOnUninstall: false
+
+mac:
+  target:
+    - target: dmg
+      arch: [x64, arm64]
+  # electron-builder auto-generates .icns from a 512×512+ PNG.
+  icon: resources/icon.png
+  category: public.app-category.productivity
+  # No code signing for internal distribution — Gatekeeper will warn on first run.
+  identity: null
+  notarize: false
+
+publish: null

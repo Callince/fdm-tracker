@@ -1,0 +1,27 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #__next { height: 100%; }
+body {
+  background: #f8fafc;
+  color: #0f172a;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+html.dark body { background: #0b1220; color: #e2e8f0; }
+
+/* Native <select> option popups don't respond to Tailwind dark: variants.
+   Style them directly so dropdown lists match the app theme. */
+html.dark select {
+  color-scheme: dark;
+}
+html.dark select option {
+  background-color: #1e293b; /* slate-800 */
+  color: #e2e8f0;            /* slate-200 */
+}
+html.dark select option:checked {
+  background-color: #334155; /* slate-700 */
+}
+html:not(.dark) select {
+  color-scheme: light;
+}

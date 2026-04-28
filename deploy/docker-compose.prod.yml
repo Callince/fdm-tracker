@@ -1,0 +1,40 @@
+name: fdm-tracker
+
+services:
+  api:
+    build:
+      context: ../backend
+    restart: unless-stopped
+    env_file: .env
+    expose:
+      - "8000"
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2"
+
+  admin:
+    build:
+      context: ../admin
+      args:
+        NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE}
+    restart: unless-stopped
+    expose:
+      - "3000"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+      - admin
+
+volumes:
+  caddy_data:
+  caddy_config:

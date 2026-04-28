@@ -1,0 +1,12 @@
+# Replace the two domains below with your actual subdomains.
+# Caddy will auto-issue Let's Encrypt certs on first request.
+
+{$ADMIN_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy admin:3000
+}
+
+{$API_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy api:8000
+}

@@ -1,0 +1,565 @@
+import { ipcMain, dialog, shell, app } from "electron";
+import { randomUUID } from "node:crypto";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { formatInTimeZone } from "date-fns-tz";
+import { IpcChannels } from "@shared/ipc";
+import type { AppStatus, LoginResult, TodaySessionEntry } from "@shared/types";
+import { api, ApiError } from "./api";
+import { auth, prefs } from "./auth";
+import { config } from "./config";
+import { autoStart } from "./autoStart";
+import { localDb } from "./localDb";
+import { syncWorker } from "./syncWorker";
+import { idleMonitor } from "./idleMonitor";
+import { getMainWindow, showMainWindow } from "./windows";
+import { getWidgetWindow, hideWidget, toggleWidget, isWidgetVisible } from "./widget";
+import { rebuild as rebuildTray } from "./tray";
+import { notify } from "./notifications";
+
+let sessionActive = false;
+let currentSessionId: string | null = null;
+let currentSessionStartedAt: string | null = null;
+let currentBreakId: string | null = null;
+let currentBreakStartedAt: string | null = null;
+let connectionOnline = true;
+
+// Cached today-snapshot, refreshed by `refreshTodayTotals()` every 30s + on sync.
+let todayActiveSec = 0;
+let todayIdleSec = 0;
+let todayBreakSec = 0;
+let todayEntries: TodaySessionEntry[] = [];
+let todayRefreshBusy = false;
+
+// Idle-nudge + EOD reminder state
+let lastNudgeAt = 0;
+let lastEodNudgeLocalDate = "";
+
+// Auto-break state: id of a break the app started automatically on prolonged
+// idle. Cleared when the break ends (auto or manual) so we can tell whether
+// the currently-open break was user-initiated or machine-initiated.
+let autoBreakId: string | null = null;
+
+function liveState(): AppStatus["live_state"] {
+  if (!sessionActive) return "offline";
+  if (currentBreakId) return "on_break";
+  return "active";
+}
+
+function status(): AppStatus {
+  const a = auth.get();
+  const p = prefs.get();
+  return {
+    signed_in: !!a.accessToken && !!a.profile,
+    profile: a.profile ?? undefined,
+    session_active: sessionActive,
+    on_break: !!currentBreakId,
+    session_started_at: currentSessionStartedAt,
+    break_started_at: currentBreakStartedAt,
+    today_active_seconds: todayActiveSec,
+    today_idle_seconds: todayIdleSec,
+    today_break_seconds: todayBreakSec,
+    today_entries: todayEntries,
+    pending_sync_count: syncWorker.pending(),
+    last_sync_ok_at: syncWorker.lastOk(),
+    last_sync_error: syncWorker.lastErr(),
+    connection: connectionOnline ? "online" : "offline",
+    live_state: liveState(),
+    privacy_acknowledged: p.privacyAcknowledged,
+    auto_start: autoStart.isEnabled(),
+    end_of_day_reminder_hour: p.endOfDayReminderHour,
+    dark_mode: p.darkMode,
+    auto_break_on_idle: p.autoBreakOnIdle,
+    widget_visible: isWidgetVisible(),
+  };
+}
+
+export function pushStatus() {
+  const snapshot = status();
+  const win = getMainWindow();
+  if (win && !win.isDestroyed()) {
+    win.webContents.send(IpcChannels.statusUpdate, snapshot);
+  }
+  const widget = getWidgetWindow();
+  if (widget && !widget.isDestroyed()) {
+    widget.webContents.send(IpcChannels.statusUpdate, snapshot);
+  }
+}
+
+async function refreshTodayTotals() {
+  const s = auth.get();
+  if (!s.profile || todayRefreshBusy) return;
+  todayRefreshBusy = true;
+  try {
+    const tz = s.profile.timezone;
+    const localDate = formatInTimeZone(new Date(), tz, "yyyy-MM-dd");
+    const d = await api.dayDetail(localDate);
+    todayActiveSec = d.totals.total_active_seconds;
+    todayIdleSec = d.totals.total_idle_seconds;
+    todayBreakSec = d.totals.total_break_seconds;
+    // Build a lookup of session ended_at so we can treat a break as closed
+    // when its parent session has ended, even if the break row itself
+    // temporarily has ended_at=null (stale data from a crashed client).
+    const sessionEndedAt = new Map<string, string | null>();
+    for (const s of d.sessions) sessionEndedAt.set(s.id, s.ended_at);
+
+    todayEntries = [
+      ...d.sessions.map((x): TodaySessionEntry => ({
+        kind: "session", id: x.id, started_at: x.started_at, ended_at: x.ended_at,
+      })),
+      ...d.breaks.map((x): TodaySessionEntry => {
+        // Reconcile: a break can never outlive its session.
+        let endedAt = x.ended_at;
+        if (endedAt === null) {
+          const parentEnded = sessionEndedAt.get(x.session_id);
+          if (parentEnded) endedAt = parentEnded;
+        }
+        return {
+          kind: "break", id: x.id, session_id: x.session_id,
+          started_at: x.started_at, ended_at: endedAt, reason: x.reason,
+        };
+      }),
+    ].sort((a, b) => a.started_at.localeCompare(b.started_at));
+    pushStatus();
+  } catch {
+    // non-fatal; dashboard keeps the last known values
+  } finally {
+    todayRefreshBusy = false;
+  }
+}
+
+let todayTimer: NodeJS.Timeout | null = null;
+function startTodayPoller() {
+  if (todayTimer) return;
+  void refreshTodayTotals();
+  todayTimer = setInterval(() => void refreshTodayTotals(), 30_000);
+}
+function stopTodayPoller() {
+  if (todayTimer) clearInterval(todayTimer);
+  todayTimer = null;
+  todayActiveSec = 0;
+  todayIdleSec = 0;
+  todayBreakSec = 0;
+  todayEntries = [];
+}
+
+// ---- Idle nudge + end-of-day reminder ------------------------------------
+
+let nudgeTimer: NodeJS.Timeout | null = null;
+let autoBreakTimer: NodeJS.Timeout | null = null;
+function startNudgeMonitor() {
+  if (!nudgeTimer) {
+    nudgeTimer = setInterval(() => {
+      try { evaluateNudges(); } catch (e) { console.warn("[nudge]", (e as Error).message); }
+    }, 60_000);
+  }
+  if (!autoBreakTimer) {
+    // Auto-break evaluation runs more often so "welcome back" fires within ~20s
+    // of the user returning rather than making them wait a full minute.
+    autoBreakTimer = setInterval(() => {
+      try { evaluateAutoBreak(); } catch (e) { console.warn("[auto-break]", (e as Error).message); }
+    }, 20_000);
+  }
+}
+function stopNudgeMonitor() {
+  if (nudgeTimer) clearInterval(nudgeTimer);
+  nudgeTimer = null;
+  if (autoBreakTimer) clearInterval(autoBreakTimer);
+  autoBreakTimer = null;
+}
+
+function evaluateAutoBreak() {
+  const p = prefs.get();
+  const a = auth.get();
+  if (!a.profile || !sessionActive || !p.autoBreakOnIdle) return;
+
+  const thresholdSec = (a.profile.idle_threshold_minutes ?? 5) * 60;
+  const idleSec = idleMonitor.lastIdleSeconds();
+
+  if (!currentBreakId && idleSec >= thresholdSec * 2) {
+    void autoStartBreak();
+    return;
+  }
+
+  // Only auto-end the break we started ourselves — don't touch manual breaks.
+  if (currentBreakId && autoBreakId === currentBreakId && idleSec < 30) {
+    void autoEndBreak();
+  }
+}
+
+async function autoStartBreak() {
+  if (!sessionActive || !currentSessionId || currentBreakId) return;
+  const now = new Date().toISOString();
+  try {
+    const r = await api.startBreak(currentSessionId, now, "auto: idle");
+    currentBreakId = r.break_id;
+    currentBreakStartedAt = now;
+    autoBreakId = r.break_id;
+    notify("Work auto-paused", "Idle for a while — FDM started a break. Move your mouse to resume.", showMainWindow);
+  } catch (e) {
+    console.error("[auto-break:start]", e);
+  }
+  pushStatus();
+  void refreshTodayTotals();
+}
+
+async function autoEndBreak() {
+  if (!currentBreakId) return;
+  const bid = currentBreakId;
+  const now = new Date().toISOString();
+  try { await api.endBreak(bid, now); } catch (e) { console.error("[auto-break:end]", e); }
+  currentBreakId = null;
+  currentBreakStartedAt = null;
+  autoBreakId = null;
+  notify("Welcome back", "Auto-break ended — tracking resumed.", showMainWindow);
+  pushStatus();
+  void refreshTodayTotals();
+}
+
+function evaluateNudges() {
+  const p = prefs.get();
+  const a = auth.get();
+  if (!a.profile) return;
+
+  // Idle nudge: only fire while a session is open, not on break, and user has been
+  // inactive ≥ 2× the idle threshold. Cooldown 10 min between nudges.
+  if (sessionActive && !currentBreakId) {
+    const thresholdSec = (a.profile.idle_threshold_minutes ?? 5) * 60;
+    const idleSec = idleMonitor.lastIdleSeconds();
+    const now = Date.now();
+    if (idleSec >= thresholdSec * 2 && now - lastNudgeAt > 10 * 60_000) {
+      lastNudgeAt = now;
+      notify(
+        "Still working?",
+        `No activity for ${Math.round(idleSec / 60)} min. Take a break or keep going — open FDM Tracker to decide.`,
+        showMainWindow,
+      );
+    }
+  }
+
+  // End-of-day reminder: fire once per local day at the configured hour, if a
+  // session is still open past that hour. Mention the target gap when the
+  // user is still short of their daily target.
+  if (p.endOfDayReminderHour != null && sessionActive) {
+    const tz = a.profile.timezone;
+    const now = new Date();
+    const h = parseInt(formatInTimeZone(now, tz, "H"), 10);
+    const localDate = formatInTimeZone(now, tz, "yyyy-MM-dd");
+    if (h >= p.endOfDayReminderHour && lastEodNudgeLocalDate !== localDate) {
+      lastEodNudgeLocalDate = localDate;
+      const targetSec = (a.profile.target_hours_per_day ?? 8) * 3600;
+      const loggedSec = todayActiveSec + todayIdleSec + todayBreakSec;
+      const gapSec = Math.max(0, targetSec - loggedSec);
+      const body =
+        gapSec > 0
+          ? `It's past ${p.endOfDayReminderHour}:00. You're ${Math.round(gapSec / 60)} min short of today's ${a.profile.target_hours_per_day ?? 8}-hour target. Click to open the app.`
+          : `It's past ${p.endOfDayReminderHour}:00 and your session is still open. Target reached — click to end it.`;
+      notify("End-of-day reminder", body, showMainWindow);
+    }
+  }
+}
+
+// ---- Tray wiring ---------------------------------------------------------
+
+function rebuildTrayWithHandlers(handlers: {
+  startWork: () => Promise<void>;
+  endWork: () => Promise<void>;
+  startBreak: () => Promise<void>;
+  endBreak: () => Promise<void>;
+}) {
+  rebuildTray({
+    isSessionActive: () => sessionActive,
+    isOnBreak: () => !!currentBreakId,
+    startWork: () => { void handlers.startWork(); },
+    endWork: () => { void handlers.endWork(); },
+    startBreak: () => { void handlers.startBreak(); },
+    endBreak: () => { void handlers.endBreak(); },
+  });
+}
+
+function ensureFingerprint(): string {
+  const p = prefs.get();
+  if (p.deviceFingerprint) return p.deviceFingerprint;
+  const fp = `${os.hostname()}-${randomUUID()}`;
+  prefs.set("deviceFingerprint", fp);
+  return fp;
+}
+
+// ---- Session + break actions --------------------------------------------
+
+async function doStartWork() {
+  const s = auth.get();
+  if (!s.profile) return;
+  const now = new Date().toISOString();
+  try {
+    const r = await api.startSession(now);
+    currentSessionId = r.session_id;
+    currentSessionStartedAt = r.started_at ?? now;
+    sessionActive = true;
+    syncWorker.setSession(r.session_id);
+  } catch (e) {
+    console.error("[work:start]", e);
+  }
+  pushStatus();
+  void refreshTodayTotals();
+}
+
+async function doEndWork() {
+  if (!sessionActive || !currentSessionId) return;
+  const sid = currentSessionId;
+  const now = new Date().toISOString();
+  syncWorker.forceFlushBucket();
+  await syncWorker.forceSync();
+  try { await api.endSession(sid, now); } catch (e) { console.error("[work:end]", e); }
+  if (currentBreakId) {
+    try { await api.endBreak(currentBreakId, now); } catch { /* ignore */ }
+    currentBreakId = null;
+    currentBreakStartedAt = null;
+    autoBreakId = null;
+  }
+  sessionActive = false;
+  currentSessionId = null;
+  currentSessionStartedAt = null;
+  syncWorker.setSession(null);
+  pushStatus();
+  void refreshTodayTotals();
+}
+
+async function doStartBreak() {
+  if (!sessionActive || !currentSessionId || currentBreakId) return;
+  const now = new Date().toISOString();
+  try {
+    const r = await api.startBreak(currentSessionId, now);
+    currentBreakId = r.break_id;
+    currentBreakStartedAt = now;
+  } catch (e) { console.error("[break:start]", e); }
+  pushStatus();
+  void refreshTodayTotals();
+}
+
+async function doEndBreak() {
+  if (!currentBreakId) return;
+  const bid = currentBreakId;
+  const now = new Date().toISOString();
+  try { await api.endBreak(bid, now); } catch (e) { console.error("[break:end]", e); }
+  currentBreakId = null;
+  currentBreakStartedAt = null;
+  autoBreakId = null;
+  pushStatus();
+  void refreshTodayTotals();
+}
+
+async function doEndBreakById(breakId: string) {
+  if (!breakId) return;
+  // If this is the in-memory active break, go through the normal end flow so
+  // local state (currentBreakId + autoBreakId) stays consistent.
+  if (breakId === currentBreakId) {
+    await doEndBreak();
+    return;
+  }
+  // Otherwise it's an orphaned row from a crashed session — close it server-side.
+  const now = new Date().toISOString();
+  try { await api.endBreak(breakId, now); } catch (e) { console.error("[break:endById]", e); }
+  pushStatus();
+  void refreshTodayTotals();
+}
+
+async function toggleBreak() {
+  if (!sessionActive) return;
+  if (currentBreakId) await doEndBreak();
+  else await doStartBreak();
+  rebuildTrayWithHandlers({ startWork: doStartWork, endWork: doEndWork, startBreak: doStartBreak, endBreak: doEndBreak });
+}
+
+// ---- IPC handlers --------------------------------------------------------
+
+export function registerIpc() {
+  ipcMain.handle(IpcChannels.getStatus, async () => status());
+  ipcMain.handle(IpcChannels.apiBase, async () => config.apiBase);
+
+  ipcMain.handle(IpcChannels.login, async (_e, body: { email: string; password: string }): Promise<LoginResult> => {
+    try {
+      const fp = ensureFingerprint();
+      const profile = await api.login(body.email.trim().toLowerCase(), body.password, fp, process.platform, os.hostname());
+      syncWorker.start(profile.idle_threshold_minutes, () => { pushStatus(); void refreshTodayTotals(); });
+      idleMonitor.setThreshold(profile.idle_threshold_minutes);
+      rebuildTrayWithHandlers({ startWork: doStartWork, endWork: doEndWork, startBreak: doStartBreak, endBreak: doEndBreak });
+      startTodayPoller();
+      startNudgeMonitor();
+      pushStatus();
+      return { ok: true, profile };
+    } catch (e) {
+      return { ok: false, error: e instanceof ApiError ? e.message : "login failed" };
+    }
+  });
+
+  ipcMain.handle(IpcChannels.logout, async () => {
+    try { await api.logout(); } catch { /* ignore */ }
+    if (sessionActive) await doEndWork();
+    syncWorker.stop();
+    stopTodayPoller();
+    stopNudgeMonitor();
+    auth.clear();
+    localDb.setState("session", "");
+    sessionActive = false;
+    currentSessionId = null;
+    currentSessionStartedAt = null;
+    currentBreakId = null;
+    currentBreakStartedAt = null;
+    pushStatus();
+  });
+
+  ipcMain.handle(IpcChannels.signup, async (_e, body: { name: string; email: string; password: string; position?: string; team_id?: string | null; timezone?: string }) => {
+    try { return { ok: true, data: await api.signup(body) }; }
+    catch (e) { return { ok: false, error: e instanceof ApiError ? e.message : "signup failed" }; }
+  });
+
+  ipcMain.handle(IpcChannels.listPublicTeams, async () => {
+    try { return { ok: true as const, data: await api.listPublicTeams() }; }
+    catch (e) { return { ok: false as const, error: e instanceof ApiError ? e.message : "list failed" }; }
+  });
+
+  ipcMain.handle(IpcChannels.verifyEmail, async (_e, body: { email: string; code: string }) => {
+    try { return { ok: true, data: await api.verifyEmail(body.email, body.code) }; }
+    catch (e) { return { ok: false, error: e instanceof ApiError ? e.message : "verify failed" }; }
+  });
+
+  ipcMain.handle(IpcChannels.resendVerification, async (_e, body: { email: string }) => {
+    try { return { ok: true, data: await api.resendVerification(body.email) }; }
+    catch (e) { return { ok: false, error: e instanceof ApiError ? e.message : "resend failed" }; }
+  });
+
+  ipcMain.handle(IpcChannels.startWork, async () => {
+    await doStartWork();
+    rebuildTrayWithHandlers({ startWork: doStartWork, endWork: doEndWork, startBreak: doStartBreak, endBreak: doEndBreak });
+  });
+  ipcMain.handle(IpcChannels.endWork, async () => {
+    await doEndWork();
+    rebuildTrayWithHandlers({ startWork: doStartWork, endWork: doEndWork, startBreak: doStartBreak, endBreak: doEndBreak });
+  });
+  ipcMain.handle(IpcChannels.startBreak, async () => {
+    await doStartBreak();
+    rebuildTrayWithHandlers({ startWork: doStartWork, endWork: doEndWork, startBreak: doStartBreak, endBreak: doEndBreak });
+  });
+  ipcMain.handle(IpcChannels.endBreak, async () => {
+    await doEndBreak();
+    rebuildTrayWithHandlers({ startWork: doStartWork, endWork: doEndWork, startBreak: doStartBreak, endBreak: doEndBreak });
+  });
+
+  ipcMain.handle(IpcChannels.acknowledgePrivacy, async () => {
+    prefs.set("privacyAcknowledged", true);
+    pushStatus();
+  });
+
+  ipcMain.handle(IpcChannels.setAutoStart, async (_e, enabled: boolean) => {
+    autoStart.set(enabled);
+    prefs.set("autoStart", enabled);
+    pushStatus();
+  });
+
+  ipcMain.handle(IpcChannels.setDarkMode, async (_e, enabled: boolean) => {
+    prefs.set("darkMode", enabled);
+    pushStatus();
+  });
+
+  ipcMain.handle(IpcChannels.setEodReminder, async (_e, hour: number | null) => {
+    prefs.set("endOfDayReminderHour", hour);
+    pushStatus();
+  });
+
+  ipcMain.handle(IpcChannels.setAutoBreakOnIdle, async (_e, enabled: boolean) => {
+    prefs.set("autoBreakOnIdle", enabled);
+    pushStatus();
+  });
+
+  ipcMain.handle(IpcChannels.endBreakById, async (_e, body: { break_id: string }) => {
+    await doEndBreakById(body.break_id);
+    rebuildTrayWithHandlers({ startWork: doStartWork, endWork: doEndWork, startBreak: doStartBreak, endBreak: doEndBreak });
+  });
+
+  ipcMain.handle(IpcChannels.toggleWidget, async () => {
+    toggleWidget();
+    pushStatus();
+    rebuildTrayWithHandlers({ startWork: doStartWork, endWork: doEndWork, startBreak: doStartBreak, endBreak: doEndBreak });
+  });
+
+  ipcMain.handle(IpcChannels.hideWidget, async () => {
+    hideWidget();
+    pushStatus();
+    rebuildTrayWithHandlers({ startWork: doStartWork, endWork: doEndWork, startBreak: doStartBreak, endBreak: doEndBreak });
+  });
+
+  ipcMain.handle(IpcChannels.updateProfile, async (_e, body: Partial<{ name: string; position: string | null; team_id: string | null; timezone: string }>) => {
+    try {
+      const updated = await api.updateMe(body);
+      const a = auth.get();
+      if (a.profile) {
+        auth.setProfile({
+          ...a.profile,
+          name: updated.name,
+          position: updated.position,
+          team_id: updated.team_id,
+          team_name: updated.team_name,
+          timezone: updated.timezone,
+        });
+      }
+      if (body.timezone) idleMonitor.setThreshold(a.profile?.idle_threshold_minutes ?? 5);
+      pushStatus();
+      return { ok: true as const, data: updated };
+    } catch (e) {
+      return { ok: false as const, error: e instanceof ApiError ? e.message : "update failed" };
+    }
+  });
+
+  ipcMain.handle(IpcChannels.changePassword, async (_e, body: { current: string; next: string }) => {
+    try {
+      await api.changePassword(body.current, body.next);
+      return { ok: true as const };
+    } catch (e) {
+      return { ok: false as const, error: e instanceof ApiError ? e.message : "password change failed" };
+    }
+  });
+
+  ipcMain.handle(IpcChannels.exportMyData, async (_e, body: { from: string; to: string }) => {
+    const a = auth.get();
+    if (!a.accessToken) return { ok: false as const, error: "not signed in" };
+    try {
+      const r = await fetch(api.exportMyDataUrl(body.from, body.to), {
+        headers: { Authorization: `Bearer ${a.accessToken}` },
+      });
+      if (!r.ok) return { ok: false as const, error: `HTTP ${r.status}` };
+      const text = await r.text();
+      const defaultName = `fdm-my-activity-${body.from}-${body.to}.csv`;
+      const savePath = await dialog.showSaveDialog({
+        defaultPath: path.join(app.getPath("downloads"), defaultName),
+        filters: [{ name: "CSV", extensions: ["csv"] }],
+      });
+      if (savePath.canceled || !savePath.filePath) return { ok: false as const, error: "cancelled" };
+      await fs.writeFile(savePath.filePath, text, "utf8");
+      shell.showItemInFolder(savePath.filePath);
+      return { ok: true as const, path: savePath.filePath };
+    } catch (e) {
+      return { ok: false as const, error: (e as Error).message };
+    }
+  });
+
+  ipcMain.handle(IpcChannels.dailySummary, async (_e, args: { from: string; to: string }) => {
+    return api.dailySummary(args.from, args.to);
+  });
+  ipcMain.handle(IpcChannels.dayDetail, async (_e, args: { date: string }) => {
+    return api.dayDetail(args.date);
+  });
+  ipcMain.handle(IpcChannels.rangeTotals, async (_e, args: { from: string; to: string }) => {
+    return api.rangeTotals(args.from, args.to);
+  });
+}
+
+export const ipcOps = {
+  doStartWork, doEndWork, doStartBreak, doEndBreak, toggleBreak,
+  rebuildTrayWithHandlers, pushStatus,
+  refreshTodayTotals, startTodayPoller, startNudgeMonitor,
+  setConnectionOnline(online: boolean) { connectionOnline = online; pushStatus(); },
+  isSessionActive: () => sessionActive,
+  isOnBreak: () => !!currentBreakId,
+};

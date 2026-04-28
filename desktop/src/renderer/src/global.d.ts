@@ -1,0 +1,60 @@
+/**
+ * Mirrors the contextBridge surface defined in src/preload/index.ts.
+ * Kept here so the renderer tsconfig can pick it up without importing
+ * the preload module (which would pull in `electron` types into the web bundle).
+ */
+import type { AppStatus, DailySummaryList, DayDetail, LoginResult } from "@shared/types";
+
+export {};
+
+declare global {
+  interface FdmApi {
+    getStatus: () => Promise<AppStatus>;
+    apiBase: () => Promise<string>;
+    dailySummary: (from: string, to: string) => Promise<DailySummaryList>;
+    dayDetail: (date: string) => Promise<DayDetail>;
+    rangeTotals: (from: string, to: string) => Promise<{
+      from_date: string; to_date: string;
+      total_active_seconds: number; total_idle_seconds: number; total_break_seconds: number;
+      days_counted: number; target_hours_per_day: number;
+    }>;
+
+    login: (email: string, password: string) => Promise<LoginResult>;
+    logout: () => Promise<void>;
+    signup: (body: { name: string; email: string; password: string; position?: string; team_id?: string | null; timezone?: string }) =>
+      Promise<{ ok: boolean; data?: unknown; error?: string }>;
+    listPublicTeams: () =>
+      Promise<{ ok: boolean; data?: { teams: { id: string; name: string }[] }; error?: string }>;
+    verifyEmail: (email: string, code: string) =>
+      Promise<{ ok: boolean; data?: unknown; error?: string }>;
+    resendVerification: (email: string) =>
+      Promise<{ ok: boolean; data?: unknown; error?: string }>;
+
+    startWork: () => Promise<void>;
+    endWork: () => Promise<void>;
+    startBreak: () => Promise<void>;
+    endBreak: () => Promise<void>;
+    endBreakById: (breakId: string) => Promise<void>;
+
+    acknowledgePrivacy: () => Promise<void>;
+    setAutoStart: (enabled: boolean) => Promise<void>;
+    setDarkMode: (enabled: boolean) => Promise<void>;
+    setEodReminder: (hour: number | null) => Promise<void>;
+    setAutoBreakOnIdle: (enabled: boolean) => Promise<void>;
+    toggleWidget: () => Promise<void>;
+    hideWidget: () => Promise<void>;
+
+    updateProfile: (body: Partial<{ name: string; position: string | null; team_id: string | null; timezone: string }>) =>
+      Promise<{ ok: boolean; error?: string }>;
+    changePassword: (current: string, next: string) =>
+      Promise<{ ok: boolean; error?: string }>;
+    exportMyData: (from: string, to: string) =>
+      Promise<{ ok: boolean; path?: string; error?: string }>;
+
+    onStatus: (cb: (s: AppStatus) => void) => () => void;
+  }
+
+  interface Window {
+    fdm: FdmApi;
+  }
+}

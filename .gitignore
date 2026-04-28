@@ -1,0 +1,40 @@
+# Secrets — never commit
+.env
+.env.local
+.env.*.local
+**/.env
+!**/.env.example
+deploy/.env
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node
+node_modules/
+.next/
+out/
+release/
+*.tsbuildinfo
+npm-debug.log*
+
+# Electron build artifacts
+desktop/out/
+desktop/release/
+
+# IDE / OS
+.claude/
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
