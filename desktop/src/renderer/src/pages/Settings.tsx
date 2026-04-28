@@ -28,9 +28,14 @@ export function Settings({ status, onViewPrivacy }: Props) {
     setTeamId(status.profile?.team_id ?? "");
   }, [status.profile?.user_id]);
   useEffect(() => {
-    window.fdm.listPublicTeams().then((r) => {
-      if (r.ok && r.data) setTeams(r.data.teams);
-    });
+    const load = () => {
+      window.fdm.listPublicTeams().then((r) => {
+        if (r.ok && r.data) setTeams(r.data.teams);
+      });
+    };
+    load();
+    window.addEventListener("focus", load);
+    return () => window.removeEventListener("focus", load);
   }, []);
 
   // ---- password form ----
