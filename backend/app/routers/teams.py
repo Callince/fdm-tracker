@@ -31,6 +31,30 @@ def list_public_teams(db: Annotated[Session, Depends(get_db)]) -> PublicTeamList
     return PublicTeamListResponse(teams=[TeamBrief(id=t.id, name=t.name) for t in rows])
 
 
+@public_router.post("", response_model=TeamBrief, status_code=status.HTTP_201_CREATED)
+def public_create_team(
+    body: TeamCreate, db: Annotated[Session, Depends(get_db)]
+) -> TeamBrief:
+    """Self-signup helper: any user can add a missing team during signup.
+    Existing-name returns the existing row instead of erroring so the
+    signup form can keep going without a friction loop."""
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "team name required")
+    if len(name) > 50:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "team name too long (max 50)")
+    existing = db.execute(
+        select(Team).where(func.lower(Team.name) == name.lower())
+    ).scalar_one_or_none()
+    if existing is not None:
+        return TeamBrief(id=existing.id, name=existing.name)
+    team = Team(name=name)
+    db.add(team)
+    db.commit()
+    db.refresh(team)
+    return TeamBrief(id=team.id, name=team.name)
+
+
 def _with_counts(db: Session) -> list[TeamOut]:
     stmt = (
         select(Team.id, Team.name, func.count(User.id))

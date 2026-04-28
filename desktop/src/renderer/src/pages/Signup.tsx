@@ -18,6 +18,30 @@ export function Signup({ onSubmitted, onBack }: Props) {
   const [teams, setTeams] = useState<TeamBrief[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [addingTeam, setAddingTeam] = useState(false);
+  const [newTeamName, setNewTeamName] = useState("");
+  const [addingBusy, setAddingBusy] = useState(false);
+  const [teamErr, setTeamErr] = useState<string | null>(null);
+
+  async function addTeam() {
+    const name = newTeamName.trim();
+    if (!name) return;
+    setAddingBusy(true);
+    setTeamErr(null);
+    const r = await window.fdm.createPublicTeam(name);
+    setAddingBusy(false);
+    if (!r.ok || !r.data) {
+      setTeamErr(r.error ?? "create team failed");
+      return;
+    }
+    const created = r.data;
+    setTeams((cur) =>
+      cur.some((t) => t.id === created.id) ? cur : [...cur, created].sort((a, b) => a.name.localeCompare(b.name)),
+    );
+    setForm((f) => ({ ...f, team_id: created.id }));
+    setAddingTeam(false);
+    setNewTeamName("");
+  }
 
   useEffect(() => {
     const load = () => {
@@ -74,16 +98,48 @@ export function Signup({ onSubmitted, onBack }: Props) {
                onChange={(e) => setForm({ ...form, position: e.target.value })} />
         <div>
           <label className="text-xs text-slate-600 dark:text-slate-400 block mb-1">Team</label>
-          <select
-            className="h-10 w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand/60"
-            value={form.team_id}
-            onChange={(e) => setForm({ ...form, team_id: e.target.value })}
-          >
-            <option value="">{teams.length === 0 ? "No teams configured — ask an admin" : "Pick a team (optional)"}</option>
-            {teams.map((t) => (
-              <option key={t.id} value={t.id}>{t.name}</option>
-            ))}
-          </select>
+          {!addingTeam ? (
+            <>
+              <select
+                className="h-10 w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand/60"
+                value={form.team_id}
+                onChange={(e) => {
+                  if (e.target.value === "__add__") {
+                    setAddingTeam(true);
+                    return;
+                  }
+                  setForm({ ...form, team_id: e.target.value });
+                }}
+              >
+                <option value="">{teams.length === 0 ? "No teams yet — add one below" : "Pick a team (optional)"}</option>
+                {teams.map((t) => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
+                ))}
+                <option value="__add__">+ Add new team…</option>
+              </select>
+            </>
+          ) : (
+            <div className="flex gap-2">
+              <Input
+                placeholder="New team name"
+                value={newTeamName}
+                onChange={(e) => setNewTeamName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") { e.preventDefault(); void addTeam(); }
+                  if (e.key === "Escape") { setAddingTeam(false); setNewTeamName(""); setTeamErr(null); }
+                }}
+                autoFocus
+                maxLength={50}
+              />
+              <Button type="button" variant="brand" onClick={() => void addTeam()} disabled={addingBusy || !newTeamName.trim()}>
+                {addingBusy ? "Adding…" : "Add"}
+              </Button>
+              <Button type="button" variant="ghost" onClick={() => { setAddingTeam(false); setNewTeamName(""); setTeamErr(null); }}>
+                Cancel
+              </Button>
+            </div>
+          )}
+          {teamErr && <div className="text-xs text-red-600 mt-1">{teamErr}</div>}
         </div>
         <Input type="password" placeholder="Password (min 8 chars)" minLength={8} required
                value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />

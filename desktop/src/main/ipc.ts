@@ -420,6 +420,11 @@ export function registerIpc() {
     catch (e) { return { ok: false as const, error: e instanceof ApiError ? e.message : "list failed" }; }
   });
 
+  ipcMain.handle(IpcChannels.createPublicTeam, async (_e, body: { name: string }) => {
+    try { return { ok: true as const, data: await api.createPublicTeam(body.name) }; }
+    catch (e) { return { ok: false as const, error: e instanceof ApiError ? e.message : "create team failed" }; }
+  });
+
   ipcMain.handle(IpcChannels.verifyEmail, async (_e, body: { email: string; code: string }) => {
     try { return { ok: true, data: await api.verifyEmail(body.email, body.code) }; }
     catch (e) { return { ok: false, error: e instanceof ApiError ? e.message : "verify failed" }; }

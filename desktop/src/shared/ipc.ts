@@ -27,6 +27,7 @@ export const IpcChannels = {
   changePassword: "fdm:me:password",
   exportMyData: "fdm:me:export",
   listPublicTeams: "fdm:teams:listPublic",
+  createPublicTeam: "fdm:teams:createPublic",
   dailySummary: "fdm:calendar:summary",
   dayDetail: "fdm:calendar:day",
   rangeTotals: "fdm:calendar:rangeTotals",
