@@ -26,6 +26,8 @@ const api = {
     ipcRenderer.invoke(IpcChannels.signup, body) as Promise<{ ok: boolean; data?: unknown; error?: string }>,
   listPublicTeams: () =>
     ipcRenderer.invoke(IpcChannels.listPublicTeams) as Promise<{ ok: boolean; data?: { teams: { id: string; name: string }[] }; error?: string }>,
+  createPublicTeam: (name: string) =>
+    ipcRenderer.invoke(IpcChannels.createPublicTeam, { name }) as Promise<{ ok: boolean; data?: { id: string; name: string }; error?: string }>,
   verifyEmail: (email: string, code: string) =>
     ipcRenderer.invoke(IpcChannels.verifyEmail, { email, code }) as Promise<{ ok: boolean; data?: unknown; error?: string }>,
   resendVerification: (email: string) =>

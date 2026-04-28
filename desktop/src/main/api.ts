@@ -138,6 +138,12 @@ export const api = {
     });
   },
 
+  async createPublicTeam(name: string) {
+    return request<{ id: string; name: string }>({
+      path: "/teams", method: "POST", body: { name }, auth: false,
+    });
+  },
+
   async verifyEmail(email: string, code: string) {
     return request<{ message: string }>({
       path: "/auth/verify-email", method: "POST", body: { email, code }, auth: false,
