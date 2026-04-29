@@ -5,13 +5,20 @@ import { LiveTimer } from "@/components/LiveTimer";
 import { hms } from "@/lib/format";
 import { useAppStatus } from "@/lib/status";
 
-const EXPANDED_KEY = "fdm.widget.expanded";
+const SIZE_KEY = "fdm.widget.size";
+type WidgetSize = "mini" | "normal" | "max";
 
 /**
  * Compact floating panel rendered inside the always-on-top widget window.
- * Mirrors the Dashboard action state machine in a small footprint, with a
- * collapsible "today totals" section. The window itself is transparent —
- * the Shell's translucent background lets the desktop bleed through.
+ *
+ * Three sizes — controlled via setWidgetSize IPC which physically resizes
+ * the BrowserWindow:
+ *   - mini   : just the live timer, half height
+ *   - normal : timer + actions
+ *   - max    : timer + actions + today totals (Active / Idle / Break)
+ *
+ * Translucent at rest; goes solid dark on hover so the buttons are
+ * easier to read while interacting.
  */
 export function Widget() {
   const status = useAppStatus();
@@ -32,21 +39,20 @@ export function Widget() {
 
 function WidgetBody({ status }: { status: AppStatus }) {
   const [busy, setBusy] = useState<"start" | "end" | "break" | "resume" | null>(null);
-  const [expanded, setExpanded] = useState(false);
+  const [size, setSize] = useState<WidgetSize>("normal");
 
   useEffect(() => {
-    const initial = localStorage.getItem(EXPANDED_KEY) === "1";
-    setExpanded(initial);
-    void window.fdm.setWidgetHeight(initial);
+    const stored = localStorage.getItem(SIZE_KEY);
+    const initial: WidgetSize =
+      stored === "mini" || stored === "max" || stored === "normal" ? stored : "normal";
+    setSize(initial);
+    void window.fdm.setWidgetSize(initial);
   }, []);
 
-  function toggleExpanded() {
-    setExpanded((prev) => {
-      const next = !prev;
-      localStorage.setItem(EXPANDED_KEY, next ? "1" : "0");
-      void window.fdm.setWidgetHeight(next);
-      return next;
-    });
+  function changeSize(next: WidgetSize) {
+    setSize(next);
+    localStorage.setItem(SIZE_KEY, next);
+    void window.fdm.setWidgetSize(next);
   }
 
   async function act(kind: "start" | "end" | "break" | "resume") {
@@ -80,84 +86,92 @@ function WidgetBody({ status }: { status: AppStatus }) {
   const timerColor = status.on_break ? "text-brk" : "text-active";
 
   return (
-    <Shell>
-      <div className="flex items-baseline justify-between">
-        <div className={`text-[10px] uppercase tracking-widest font-semibold ${stateColor}`}>
-          {stateLabel}
+    <Shell size={size} onSize={changeSize}>
+      {/* Mini state: timer only on a single row. */}
+      {size === "mini" ? (
+        <div className="flex items-center justify-between gap-3">
+          <div className={`text-[10px] uppercase tracking-widest font-semibold ${stateColor}`}>
+            {stateLabel}
+          </div>
+          {timerStart ? (
+            <LiveTimer
+              startedAt={timerStart}
+              pausedSince={null}
+              className={`text-base font-semibold tabular-nums ${timerColor}`}
+            />
+          ) : (
+            <span className="text-base font-semibold tabular-nums text-slate-400">0:00:00</span>
+          )}
         </div>
-        {timerStart ? (
-          <LiveTimer
-            startedAt={timerStart}
-            pausedSince={null}
-            className={`text-xl font-semibold tabular-nums ${timerColor}`}
-          />
-        ) : (
-          <span className="text-xl font-semibold tabular-nums text-slate-400">0:00:00</span>
-        )}
-      </div>
+      ) : (
+        <>
+          <div className="flex items-baseline justify-between">
+            <div className={`text-[10px] uppercase tracking-widest font-semibold ${stateColor}`}>
+              {stateLabel}
+            </div>
+            {timerStart ? (
+              <LiveTimer
+                startedAt={timerStart}
+                pausedSince={null}
+                className={`text-xl font-semibold tabular-nums ${timerColor}`}
+              />
+            ) : (
+              <span className="text-xl font-semibold tabular-nums text-slate-400">0:00:00</span>
+            )}
+          </div>
 
-      <div className="mt-3 flex gap-2 no-drag">
-        {!status.session_active && (
-          <Action
-            label={busy === "start" ? "Starting…" : "▶ Start"}
-            tone="active"
-            fullWidth
-            disabled={busy !== null}
-            onClick={() => act("start")}
-          />
-        )}
-        {status.session_active && !status.on_break && (
-          <>
-            <Action
-              label={busy === "break" ? "…" : "⏸ Break"}
-              tone="brk"
-              disabled={busy !== null}
-              onClick={() => act("break")}
-            />
-            <Action
-              label={busy === "end" ? "…" : "■ End work"}
-              tone="danger"
-              disabled={busy !== null}
-              onClick={() => act("end")}
-            />
-          </>
-        )}
-        {status.session_active && status.on_break && (
-          <>
-            <Action
-              label={busy === "resume" ? "…" : "▶ Resume"}
-              tone="active"
-              disabled={busy !== null}
-              onClick={() => act("resume")}
-            />
-            <Action
-              label={busy === "end" ? "…" : "■ End"}
-              tone="danger"
-              disabled={busy !== null}
-              onClick={() => act("end")}
-            />
-          </>
-        )}
-      </div>
+          <div className="mt-3 flex gap-2 no-drag">
+            {!status.session_active && (
+              <Action
+                label={busy === "start" ? "Starting…" : "▶ Start"}
+                tone="active"
+                fullWidth
+                disabled={busy !== null}
+                onClick={() => act("start")}
+              />
+            )}
+            {status.session_active && !status.on_break && (
+              <>
+                <Action
+                  label={busy === "break" ? "…" : "⏸ Break"}
+                  tone="brk"
+                  disabled={busy !== null}
+                  onClick={() => act("break")}
+                />
+                <Action
+                  label={busy === "end" ? "…" : "■ End work"}
+                  tone="danger"
+                  disabled={busy !== null}
+                  onClick={() => act("end")}
+                />
+              </>
+            )}
+            {status.session_active && status.on_break && (
+              <>
+                <Action
+                  label={busy === "resume" ? "…" : "▶ Resume"}
+                  tone="active"
+                  disabled={busy !== null}
+                  onClick={() => act("resume")}
+                />
+                <Action
+                  label={busy === "end" ? "…" : "■ End"}
+                  tone="danger"
+                  disabled={busy !== null}
+                  onClick={() => act("end")}
+                />
+              </>
+            )}
+          </div>
 
-      {/* Expand/collapse toggle for today totals */}
-      <button
-        type="button"
-        onClick={toggleExpanded}
-        className="no-drag mt-3 w-full inline-flex items-center justify-center gap-1 rounded text-[10px] uppercase tracking-wider text-slate-300 hover:text-white hover:bg-white/5 py-1"
-        style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
-        title={expanded ? "Hide today's totals" : "Show today's totals"}
-      >
-        {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-        {expanded ? "Hide totals" : "Today totals"}
-      </button>
-
-      {expanded && (
-        <div className="mt-2 grid grid-cols-3 gap-1 text-[10px]">
-          <Stat label="Active" value={hms(status.today_active_seconds)} colorClass="text-active" />
-          <Stat label="Idle" value={hms(status.today_idle_seconds)} colorClass="text-idle" />
-          <Stat label="Break" value={hms(status.today_break_seconds)} colorClass="text-brk" />
-        </div>
+          {size === "max" && (
+            <div className="mt-3 grid grid-cols-3 gap-1 text-[10px]">
+              <Stat label="Active" value={hms(status.today_active_seconds)} colorClass="text-active" />
+              <Stat label="Idle" value={hms(status.today_idle_seconds)} colorClass="text-idle" />
+              <Stat label="Break" value={hms(status.today_break_seconds)} colorClass="text-brk" />
+            </div>
+          )}
+        </>
       )}
     </Shell>
   );
@@ -172,24 +186,56 @@ function Stat({ label, value, colorClass }: { label: string; value: string; colo
   );
 }
 
-function Shell({ children }: { children: React.ReactNode }) {
+function Shell({
+  children,
+  size,
+  onSize,
+}: {
+  children: React.ReactNode;
+  size?: WidgetSize;
+  onSize?: (s: WidgetSize) => void;
+}) {
+  // Translucent by default, fully opaque dark on hover.
   return (
     <div
-      className="h-full w-full p-3 rounded-xl bg-slate-900/35 hover:bg-slate-900/35 text-slate-100 shadow-lg border border-white/10 backdrop-blur-md select-none"
+      className="group h-full w-full p-3 rounded-xl bg-slate-900/30 hover:bg-slate-900 text-slate-100 shadow-lg border border-white/10 backdrop-blur-md select-none transition-colors"
       style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
     >
       <div className="flex items-center justify-between mb-1">
-        <GripHorizontal size={14} className="text-slate-400/70" />
-        <button
-          type="button"
-          onClick={() => { void window.fdm.hideWidget(); }}
-          className="no-drag rounded p-0.5 text-slate-300 hover:text-white hover:bg-white/10"
-          style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
-          title="Hide widget"
-          aria-label="Hide widget"
-        >
-          <X size={14} />
-        </button>
+        <GripHorizontal size={12} className="text-slate-400/70" />
+        <div className="flex items-center gap-0.5 no-drag" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
+          {onSize && size !== "max" && (
+            <button
+              type="button"
+              onClick={() => onSize(size === "mini" ? "normal" : "max")}
+              className="rounded p-0.5 text-slate-300 hover:text-white hover:bg-white/10"
+              title={size === "mini" ? "Restore" : "Maximize"}
+              aria-label={size === "mini" ? "Restore" : "Maximize"}
+            >
+              <ChevronUp size={12} />
+            </button>
+          )}
+          {onSize && size !== "mini" && (
+            <button
+              type="button"
+              onClick={() => onSize(size === "max" ? "normal" : "mini")}
+              className="rounded p-0.5 text-slate-300 hover:text-white hover:bg-white/10"
+              title={size === "max" ? "Restore" : "Minimize"}
+              aria-label={size === "max" ? "Restore" : "Minimize"}
+            >
+              <ChevronDown size={12} />
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => { void window.fdm.hideWidget(); }}
+            className="rounded p-0.5 text-slate-300 hover:text-white hover:bg-white/10"
+            title="Hide widget"
+            aria-label="Hide widget"
+          >
+            <X size={12} />
+          </button>
+        </div>
       </div>
       <div
         className="no-drag"

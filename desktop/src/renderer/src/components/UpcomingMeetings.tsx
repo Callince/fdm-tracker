@@ -62,11 +62,20 @@ export function UpcomingMeetings() {
     };
   }, []);
 
-  // Show meetings that haven't ended yet (start + duration > now).
+  // Today-only on the dashboard. A meeting counts as "today" if any part of
+  // it overlaps with the user's local today (start or end in this calendar
+  // day). Past parts of today are filtered out.
   const now = Date.now();
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const todayEnd = todayStart.getTime() + 24 * 60 * 60 * 1000;
+
   const visible = meetings.filter((m) => {
-    const end = parseISO(m.scheduled_at).getTime() + m.duration_minutes * 60_000;
-    return end > now;
+    const start = parseISO(m.scheduled_at).getTime();
+    const end = start + m.duration_minutes * 60_000;
+    if (end <= now) return false;          // already over
+    if (start >= todayEnd) return false;   // tomorrow or later
+    return end > todayStart.getTime();     // overlaps today
   }).slice(0, 5);
 
   return (
@@ -74,9 +83,9 @@ export function UpcomingMeetings() {
       <CardHeader className="dark:border-slate-800">
         <div className="flex items-baseline justify-between">
           <div>
-            <div className="text-sm font-semibold">Upcoming meetings</div>
+            <div className="text-sm font-semibold">Today's meetings</div>
             <div className="text-xs text-slate-500 dark:text-slate-400">
-              You'll get a desktop notification before each one.
+              Live + upcoming for today only. See the Meetings tab for past + future.
             </div>
           </div>
           <span className="text-[11px] text-slate-400 dark:text-slate-500 tabular-nums">
@@ -88,7 +97,7 @@ export function UpcomingMeetings() {
         {!loaded && <div className="text-sm text-slate-500">Loading…</div>}
         {loaded && visible.length === 0 && (
           <div className="text-sm text-slate-500 dark:text-slate-400 py-2">
-            No meetings scheduled in the next 30 days.
+            No meetings left for today.
           </div>
         )}
         {visible.length > 0 && (
