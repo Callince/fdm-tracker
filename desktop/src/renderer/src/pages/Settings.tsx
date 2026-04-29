@@ -106,6 +106,24 @@ export function Settings({ status, onViewPrivacy }: Props) {
     setBusy(null);
   }
 
+  async function toggleMeetingNotifications(enabled: boolean) {
+    setBusy("meeting-notif");
+    await window.fdm.setMeetingNotifications(enabled);
+    setBusy(null);
+  }
+
+  async function toggleMeetingAlarm(enabled: boolean) {
+    setBusy("meeting-alarm");
+    await window.fdm.setMeetingAlarm(enabled);
+    setBusy(null);
+  }
+
+  async function setMeetingMinutes(minutes: number) {
+    setBusy("meeting-min");
+    await window.fdm.setMeetingReminderMinutes(minutes);
+    setBusy(null);
+  }
+
   async function exportData() {
     setMsg(null);
     setBusy("export");
@@ -215,6 +233,48 @@ export function Settings({ status, onViewPrivacy }: Props) {
                 </div>
               </span>
             </label>
+
+            <label className="flex items-start gap-3 text-sm">
+              <input type="checkbox" checked={status.meeting_notifications_enabled} disabled={busy === "meeting-notif"}
+                     onChange={(e) => toggleMeetingNotifications(e.target.checked)} className="mt-1" />
+              <span>
+                <div className="font-medium">Meeting reminders</div>
+                <div className="text-slate-500 dark:text-slate-400">
+                  Notify me before scheduled meetings I'm invited to. Click the notification to open the meeting link.
+                </div>
+              </span>
+            </label>
+
+            {status.meeting_notifications_enabled && (
+              <>
+                <label className="flex items-start gap-3 text-sm pl-6">
+                  <input type="checkbox" checked={status.meeting_alarm_enabled} disabled={busy === "meeting-alarm"}
+                         onChange={(e) => toggleMeetingAlarm(e.target.checked)} className="mt-1" />
+                  <span>
+                    <div className="font-medium">Play alarm sound</div>
+                    <div className="text-slate-500 dark:text-slate-400">
+                      Use the OS notification sound. Off = silent toast only.
+                    </div>
+                  </span>
+                </label>
+
+                <div className="space-y-1 pl-6">
+                  <div className="text-sm font-medium">Remind me</div>
+                  <div className="flex items-center gap-2">
+                    <select
+                      className="h-9 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand/60"
+                      value={status.meeting_reminder_minutes}
+                      onChange={(e) => setMeetingMinutes(parseInt(e.target.value, 10))}
+                      disabled={busy === "meeting-min"}
+                    >
+                      {[1, 5, 10, 15, 30, 60].map((m) => (
+                        <option key={m} value={m}>{m} minute{m === 1 ? "" : "s"} before</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </>
+            )}
 
             <div className="space-y-1">
               <div className="text-sm font-medium">End-of-day reminder</div>

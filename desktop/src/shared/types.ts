@@ -60,6 +60,9 @@ export interface AppStatus {
   end_of_day_reminder_hour: number | null;   // 0-23, null = disabled
   dark_mode: boolean;
   auto_break_on_idle: boolean;
+  meeting_notifications_enabled: boolean;
+  meeting_alarm_enabled: boolean;
+  meeting_reminder_minutes: number;
   widget_visible: boolean;
 }
 

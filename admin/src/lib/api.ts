@@ -6,7 +6,10 @@ import type {
   AdminUserRow,
   DailySummaryList,
   DayDetail,
+  Holiday,
   LoginResponse,
+  Meeting,
+  MeetingInput,
   MeProfile,
   OrgSettings,
   Team,
@@ -203,4 +206,27 @@ export const api = {
 
   deleteTeam: (id: string) =>
     request<void>(`/admin/teams/${id}`, { method: "DELETE" }),
+
+  // ---- Meetings ----
+  listMeetings: () =>
+    request<{ meetings: Meeting[] }>("/admin/meetings"),
+
+  createMeeting: (body: MeetingInput) =>
+    request<Meeting>("/admin/meetings", { method: "POST", body: JSON.stringify(body) }),
+
+  updateMeeting: (id: string, body: Partial<MeetingInput>) =>
+    request<Meeting>(`/admin/meetings/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+
+  deleteMeeting: (id: string) =>
+    request<void>(`/admin/meetings/${id}`, { method: "DELETE" }),
+
+  // ---- Holidays ----
+  listHolidays: () =>
+    request<{ holidays: Holiday[] }>("/admin/holidays"),
+
+  createHoliday: (body: { date: string; name: string }) =>
+    request<Holiday>("/admin/holidays", { method: "POST", body: JSON.stringify(body) }),
+
+  deleteHoliday: (id: string) =>
+    request<void>(`/admin/holidays/${id}`, { method: "DELETE" }),
 };

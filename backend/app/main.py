@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_settings
 from .logging_config import configure_logging
-from .routers import activity, admin, auth, breaks, me, sessions, teams
+from .routers import activity, admin, auth, breaks, holidays, me, meetings, sessions, teams
 
 
 def create_app() -> FastAPI:
@@ -33,6 +33,10 @@ def create_app() -> FastAPI:
     app.include_router(me.router)
     app.include_router(teams.public_router)
     app.include_router(teams.admin_router)
+    app.include_router(meetings.public_router)
+    app.include_router(meetings.admin_router)
+    app.include_router(holidays.public_router)
+    app.include_router(holidays.admin_router)
     app.include_router(admin.router)
 
     @app.get("/health", tags=["meta"])

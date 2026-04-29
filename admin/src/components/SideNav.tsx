@@ -5,11 +5,13 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   Activity,
+  CalendarDays,
   ChevronLeft,
   ChevronRight,
   FileText,
   Settings,
   Users,
+  Video,
 } from "lucide-react";
 
 interface Item {
@@ -27,6 +29,8 @@ const SECTIONS: Section[] = [
   { label: "Overview", items: [{ href: "/dashboard", label: "Dashboard", icon: Activity }] },
   { label: "Manage", items: [
     { href: "/users", label: "People", icon: Users },
+    { href: "/meetings", label: "Meetings", icon: Video },
+    { href: "/holidays", label: "Holidays", icon: CalendarDays },
   ]},
   { label: "Insights", items: [{ href: "/reports", label: "Reports", icon: FileText }] },
   { label: "Admin", items: [{ href: "/settings", label: "Settings", icon: Settings }] },

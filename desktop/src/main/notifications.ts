@@ -5,9 +5,28 @@
  */
 import { Notification } from "electron";
 
-export function notify(title: string, body: string, onClick?: () => void): void {
+interface NotifyOpts {
+  title: string;
+  body: string;
+  sound?: boolean;
+  onClick?: () => void;
+}
+
+export function notify(
+  titleOrOpts: string | NotifyOpts,
+  body?: string,
+  onClick?: () => void,
+): void {
   if (!Notification.isSupported()) return;
-  const n = new Notification({ title, body, silent: false });
-  if (onClick) n.on("click", onClick);
+  const opts: NotifyOpts =
+    typeof titleOrOpts === "string"
+      ? { title: titleOrOpts, body: body ?? "", onClick }
+      : titleOrOpts;
+  const n = new Notification({
+    title: opts.title,
+    body: opts.body,
+    silent: opts.sound === false,
+  });
+  if (opts.onClick) n.on("click", opts.onClick);
   n.show();
 }

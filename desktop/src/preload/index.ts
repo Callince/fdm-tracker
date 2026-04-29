@@ -51,6 +51,12 @@ const api = {
     ipcRenderer.invoke(IpcChannels.setEodReminder, hour),
   setAutoBreakOnIdle: (enabled: boolean): Promise<void> =>
     ipcRenderer.invoke(IpcChannels.setAutoBreakOnIdle, enabled),
+  setMeetingNotifications: (enabled: boolean): Promise<void> =>
+    ipcRenderer.invoke(IpcChannels.setMeetingNotifications, enabled),
+  setMeetingAlarm: (enabled: boolean): Promise<void> =>
+    ipcRenderer.invoke(IpcChannels.setMeetingAlarm, enabled),
+  setMeetingReminderMinutes: (minutes: number): Promise<void> =>
+    ipcRenderer.invoke(IpcChannels.setMeetingReminderMinutes, minutes),
 
   // floating widget
   toggleWidget: (): Promise<void> => ipcRenderer.invoke(IpcChannels.toggleWidget),
