@@ -74,14 +74,14 @@ export function Modal({
         aria-modal="true"
         aria-labelledby={title ? titleId : undefined}
         className={twMerge(
-          "w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xl overflow-hidden",
+          "w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xl overflow-hidden flex flex-col max-h-[calc(100vh-2rem)]",
           SIZE[size],
           className,
         )}
         onClick={(e) => e.stopPropagation()}
       >
         {title && (
-          <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-slate-100 dark:border-slate-800">
+          <div className="shrink-0 flex items-start justify-between gap-3 px-5 py-4 border-b border-slate-100 dark:border-slate-800">
             <div>
               <div id={titleId} className="text-base font-semibold text-slate-900 dark:text-slate-100">
                 {title}
@@ -101,9 +101,9 @@ export function Modal({
             )}
           </div>
         )}
-        <div className="px-5 py-4">{children}</div>
+        <div className="px-5 py-4 overflow-y-auto flex-1 min-h-0">{children}</div>
         {footer && (
-          <div className="px-5 py-3 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/40 flex justify-end gap-2">
+          <div className="shrink-0 px-5 py-3 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/40 flex justify-end gap-2">
             {footer}
           </div>
         )}
