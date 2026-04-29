@@ -36,6 +36,7 @@ declare global {
         error?: string;
       }>;
     openExternal: (url: string) => Promise<void>;
+    setWidgetHeight: (expanded: boolean) => Promise<void>;
     verifyEmail: (email: string, code: string) =>
       Promise<{ ok: boolean; data?: unknown; error?: string }>;
     resendVerification: (email: string) =>

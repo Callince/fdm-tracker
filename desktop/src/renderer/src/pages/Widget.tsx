@@ -35,13 +35,16 @@ function WidgetBody({ status }: { status: AppStatus }) {
   const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
-    setExpanded(localStorage.getItem(EXPANDED_KEY) === "1");
+    const initial = localStorage.getItem(EXPANDED_KEY) === "1";
+    setExpanded(initial);
+    void window.fdm.setWidgetHeight(initial);
   }, []);
 
   function toggleExpanded() {
     setExpanded((prev) => {
       const next = !prev;
       localStorage.setItem(EXPANDED_KEY, next ? "1" : "0");
+      void window.fdm.setWidgetHeight(next);
       return next;
     });
   }
@@ -172,7 +175,7 @@ function Stat({ label, value, colorClass }: { label: string; value: string; colo
 function Shell({ children }: { children: React.ReactNode }) {
   return (
     <div
-      className="h-full w-full p-3 rounded-xl bg-slate-900/55 text-slate-100 shadow-lg border border-white/10 backdrop-blur-md select-none"
+      className="h-full w-full p-3 rounded-xl bg-slate-900/35 hover:bg-slate-900/35 text-slate-100 shadow-lg border border-white/10 backdrop-blur-md select-none"
       style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
     >
       <div className="flex items-center justify-between mb-1">

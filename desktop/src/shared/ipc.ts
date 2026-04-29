@@ -26,6 +26,7 @@ export const IpcChannels = {
   listHolidays: "fdm:holidays:list",
   listMyMeetings: "fdm:meetings:listMine",
   openExternal: "fdm:shell:openExternal",
+  setWidgetHeight: "fdm:widget:setHeight",
   endBreakById: "fdm:break:endById",
   toggleWidget: "fdm:widget:toggle",
   hideWidget: "fdm:widget:hide",
