@@ -133,7 +133,11 @@ let todayTimer: NodeJS.Timeout | null = null;
 function startTodayPoller() {
   if (todayTimer) return;
   void refreshTodayTotals();
-  todayTimer = setInterval(() => void refreshTodayTotals(), 30_000);
+  void refreshProfile();
+  todayTimer = setInterval(() => {
+    void refreshTodayTotals();
+    void refreshProfile();
+  }, 30_000);
 }
 function stopTodayPoller() {
   if (todayTimer) clearInterval(todayTimer);
@@ -142,6 +146,29 @@ function stopTodayPoller() {
   todayIdleSec = 0;
   todayBreakSec = 0;
   todayEntries = [];
+}
+
+async function refreshProfile() {
+  if (!auth.get().accessToken) return;
+  try {
+    const me = await api.getMe();
+    const cur = auth.get().profile;
+    auth.setProfile({
+      user_id: me.user_id,
+      name: me.name,
+      email: me.email,
+      role: me.role,
+      position: me.position,
+      team_id: me.team_id,
+      team_name: me.team_name,
+      timezone: me.timezone,
+      idle_threshold_minutes: cur?.idle_threshold_minutes ?? 5,
+      target_hours_per_day: cur?.target_hours_per_day ?? 8,
+    });
+    pushStatus();
+  } catch {
+    // non-fatal; UI keeps the last known profile
+  }
 }
 
 // ---- Idle nudge + end-of-day reminder ------------------------------------
