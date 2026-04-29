@@ -6,11 +6,22 @@ directories:
 files:
   - out/**
   - package.json
+  - "!**/*.map"
+  - "!**/*.ts"
+  - "!**/*.tsx"
+  - "!**/test/**"
+  - "!**/tests/**"
+  - "!**/__tests__/**"
 asar: true
 asarUnpack:
   - "**/*.node"
   - "**/better-sqlite3/**"
   - "**/uiohook-napi/**"
+# Ship en-US only — drops ~10 MB of bundled locales.
+electronLanguages:
+  - en-US
+# Maximum compression: smaller download, slower install (one-time).
+compression: maximum
 
 win:
   target:
@@ -24,6 +35,8 @@ nsis:
   allowToChangeInstallationDirectory: true
   perMachine: false
   deleteAppDataOnUninstall: false
+  # Keeps the installer bundle compressed too (default is store).
+  differentialPackage: false
 
 mac:
   target:
