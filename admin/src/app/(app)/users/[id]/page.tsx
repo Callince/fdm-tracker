@@ -94,7 +94,7 @@ export default function UserDetailPage() {
 
       {/* Month totals strip — always visible */}
       {totals && (
-        <div className="grid grid-cols-3 gap-3 max-w-xl">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-xl">
           <StatCard label={`Active · ${format(month, "MMM yyyy")}`} value={hms(totals.a)} accent="active" />
           <StatCard label="Idle" value={hms(totals.i)} accent="idle" />
           <StatCard label="Break" value={hms(totals.b)} accent="brk" />

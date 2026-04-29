@@ -160,7 +160,7 @@ export default function HolidaysPage() {
                 <button
                   key={key}
                   onClick={() => openEditor(day)}
-                  className={`relative h-20 rounded-md border text-left p-2 transition-colors ${
+                  className={`relative h-14 sm:h-20 rounded-md border text-left p-1 sm:p-2 transition-colors ${
                     !inMonth ? "opacity-40" : ""
                   } ${
                     today ? "ring-2 ring-brand/60" : ""
@@ -174,7 +174,7 @@ export default function HolidaysPage() {
                 >
                   <div className="flex items-baseline justify-between">
                     <div
-                      className={`text-sm font-medium ${
+                      className={`text-xs sm:text-sm font-medium ${
                         nonWorking
                           ? "text-red-700 dark:text-red-300"
                           : holiday?.kind === "working"
@@ -185,14 +185,14 @@ export default function HolidaysPage() {
                       {day.getDate()}
                     </div>
                     {weekend && !holiday && (
-                      <span className="text-[9px] uppercase tracking-wide text-slate-400">
+                      <span className="hidden sm:inline text-[9px] uppercase tracking-wide text-slate-400">
                         weekend
                       </span>
                     )}
                   </div>
                   {holiday && (
                     <div
-                      className={`mt-1 text-[11px] leading-tight line-clamp-2 ${
+                      className={`mt-0.5 sm:mt-1 text-[10px] sm:text-[11px] leading-tight line-clamp-2 ${
                         holiday.kind === "holiday"
                           ? "text-red-700/80 dark:text-red-300/80"
                           : "text-emerald-700/80 dark:text-emerald-300/80"

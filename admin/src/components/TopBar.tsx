@@ -2,13 +2,17 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, LogOut } from "lucide-react";
+import { ChevronDown, LogOut, Menu } from "lucide-react";
 import { api } from "@/lib/api";
 import { auth } from "@/lib/auth";
 import { Breadcrumb } from "@/components/Breadcrumb";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
-export function TopBar() {
+interface Props {
+  onMobileMenu?: () => void;
+}
+
+export function TopBar({ onMobileMenu }: Props = {}) {
   const router = useRouter();
   const profile = auth.getProfile();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -32,9 +36,20 @@ export function TopBar() {
   const initial = (profile?.name ?? "?").trim().charAt(0).toUpperCase() || "?";
 
   return (
-    <header className="shrink-0 sticky top-0 z-20 h-14 flex items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur px-5">
-      <div className="min-w-0">
-        <Breadcrumb />
+    <header className="shrink-0 sticky top-0 z-20 h-14 flex items-center justify-between gap-2 sm:gap-4 border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur px-3 sm:px-5">
+      <div className="flex items-center gap-2 min-w-0">
+        {onMobileMenu && (
+          <button
+            onClick={onMobileMenu}
+            className="md:hidden p-2 -ml-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300"
+            aria-label="Open menu"
+          >
+            <Menu size={18} />
+          </button>
+        )}
+        <div className="min-w-0">
+          <Breadcrumb />
+        </div>
       </div>
 
       <div className="flex items-center gap-1">
