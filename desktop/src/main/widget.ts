@@ -11,9 +11,16 @@ import { join } from "node:path";
 let widgetWin: BrowserWindow | null = null;
 
 const WIDGET_WIDTH = 260;
-const WIDGET_HEIGHT_COLLAPSED = 132;
-const WIDGET_HEIGHT_EXPANDED = 210;
+// Three sizes:
+// - mini (half of normal): tiny pill with just the live timer + close
+// - normal: timer + actions (default)
+// - max (double of normal): timer + actions + today totals
+const WIDGET_HEIGHT_MINI = 64;
+const WIDGET_HEIGHT_NORMAL = 132;
+const WIDGET_HEIGHT_MAX = 264;
 const MARGIN = 24;
+
+export type WidgetSize = "mini" | "normal" | "max";
 
 function iconPath(): string {
   return join(__dirname, "..", "..", "resources", "icon.png");
@@ -38,7 +45,7 @@ export function createWidget(): BrowserWindow {
   const pos = defaultPosition();
   widgetWin = new BrowserWindow({
     width: WIDGET_WIDTH,
-    height: WIDGET_HEIGHT_COLLAPSED,
+    height: WIDGET_HEIGHT_NORMAL,
     x: pos.x,
     y: pos.y,
     frame: false,
@@ -95,9 +102,12 @@ export function isWidgetVisible(): boolean {
   return !!(widgetWin && !widgetWin.isDestroyed() && widgetWin.isVisible());
 }
 
-export function setWidgetExpanded(expanded: boolean): void {
+export function setWidgetSize(size: WidgetSize): void {
   if (!widgetWin || widgetWin.isDestroyed()) return;
-  const target = expanded ? WIDGET_HEIGHT_EXPANDED : WIDGET_HEIGHT_COLLAPSED;
+  const target =
+    size === "mini" ? WIDGET_HEIGHT_MINI :
+    size === "max" ? WIDGET_HEIGHT_MAX :
+    WIDGET_HEIGHT_NORMAL;
   const [w] = widgetWin.getSize();
   widgetWin.setSize(w, target, true);
 }

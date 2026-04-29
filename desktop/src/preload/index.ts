@@ -38,8 +38,8 @@ const api = {
     }>,
   openExternal: (url: string): Promise<void> =>
     ipcRenderer.invoke(IpcChannels.openExternal, url),
-  setWidgetHeight: (expanded: boolean): Promise<void> =>
-    ipcRenderer.invoke(IpcChannels.setWidgetHeight, expanded),
+  setWidgetSize: (size: "mini" | "normal" | "max"): Promise<void> =>
+    ipcRenderer.invoke(IpcChannels.setWidgetHeight, size),
   verifyEmail: (email: string, code: string) =>
     ipcRenderer.invoke(IpcChannels.verifyEmail, { email, code }) as Promise<{ ok: boolean; data?: unknown; error?: string }>,
   resendVerification: (email: string) =>

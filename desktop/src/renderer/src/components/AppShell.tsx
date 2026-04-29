@@ -1,10 +1,10 @@
 import type { ReactNode } from "react";
-import { CalendarDays, LayoutDashboard, LogOut, Settings as SettingsIcon } from "lucide-react";
+import { CalendarDays, LayoutDashboard, LogOut, Settings as SettingsIcon, Video } from "lucide-react";
 import type { AppStatus } from "@shared/types";
 import { StatusPill } from "@/components/StatusPill";
 import { OfflineBadge } from "@/components/OfflineBadge";
 
-export type ShellView = "dashboard" | "calendar" | "settings";
+export type ShellView = "dashboard" | "calendar" | "meetings" | "settings";
 
 interface Props {
   status: AppStatus;
@@ -22,6 +22,7 @@ interface Item {
 
 const ITEMS: Item[] = [
   { key: "dashboard", label: "Today", icon: LayoutDashboard },
+  { key: "meetings", label: "Meetings", icon: Video },
   { key: "calendar", label: "Calendar", icon: CalendarDays },
   { key: "settings", label: "Settings", icon: SettingsIcon },
 ];

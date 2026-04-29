@@ -5,6 +5,7 @@ import { VerifyEmail } from "@/pages/VerifyEmail";
 import { PrivacyNotice } from "@/pages/PrivacyNotice";
 import { Dashboard } from "@/pages/Dashboard";
 import { CalendarPage } from "@/pages/Calendar";
+import { MeetingsPage } from "@/pages/Meetings";
 import { Settings } from "@/pages/Settings";
 import { Widget } from "@/pages/Widget";
 import { AppShell, type ShellView } from "@/components/AppShell";
@@ -85,6 +86,7 @@ export default function App() {
       onLogout={() => { void window.fdm.logout(); }}
     >
       {view === "dashboard" && <Dashboard status={status} />}
+      {view === "meetings" && <MeetingsPage />}
       {view === "calendar" && <CalendarPage />}
       {view === "settings" && (
         <Settings status={status} onViewPrivacy={() => setShowPrivacyReview(true)} />
