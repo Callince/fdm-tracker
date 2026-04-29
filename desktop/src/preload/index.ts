@@ -30,6 +30,14 @@ const api = {
     ipcRenderer.invoke(IpcChannels.createPublicTeam, { name }) as Promise<{ ok: boolean; data?: { id: string; name: string }; error?: string }>,
   listHolidays: () =>
     ipcRenderer.invoke(IpcChannels.listHolidays) as Promise<{ ok: boolean; data?: { holidays: { id: string; date: string; name: string; kind: "holiday" | "working" }[] }; error?: string }>,
+  listMyMeetings: () =>
+    ipcRenderer.invoke(IpcChannels.listMyMeetings) as Promise<{
+      ok: boolean;
+      data?: { meetings: Array<{ id: string; title: string; meeting_link: string | null; scheduled_at: string; duration_minutes: number; attendees: { id: string; name: string; email: string }[] }> };
+      error?: string;
+    }>,
+  openExternal: (url: string): Promise<void> =>
+    ipcRenderer.invoke(IpcChannels.openExternal, url),
   verifyEmail: (email: string, code: string) =>
     ipcRenderer.invoke(IpcChannels.verifyEmail, { email, code }) as Promise<{ ok: boolean; data?: unknown; error?: string }>,
   resendVerification: (email: string) =>

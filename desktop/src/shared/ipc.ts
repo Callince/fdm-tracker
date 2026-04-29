@@ -24,6 +24,8 @@ export const IpcChannels = {
   setMeetingAlarm: "fdm:prefs:meetingAlarm",
   setMeetingReminderMinutes: "fdm:prefs:meetingReminderMinutes",
   listHolidays: "fdm:holidays:list",
+  listMyMeetings: "fdm:meetings:listMine",
+  openExternal: "fdm:shell:openExternal",
   endBreakById: "fdm:break:endById",
   toggleWidget: "fdm:widget:toggle",
   hideWidget: "fdm:widget:hide",

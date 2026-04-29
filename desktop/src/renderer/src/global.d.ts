@@ -29,6 +29,13 @@ declare global {
       Promise<{ ok: boolean; data?: { id: string; name: string }; error?: string }>;
     listHolidays: () =>
       Promise<{ ok: boolean; data?: { holidays: { id: string; date: string; name: string; kind: "holiday" | "working" }[] }; error?: string }>;
+    listMyMeetings: () =>
+      Promise<{
+        ok: boolean;
+        data?: { meetings: Array<{ id: string; title: string; meeting_link: string | null; scheduled_at: string; duration_minutes: number; attendees: { id: string; name: string; email: string }[] }> };
+        error?: string;
+      }>;
+    openExternal: (url: string) => Promise<void>;
     verifyEmail: (email: string, code: string) =>
       Promise<{ ok: boolean; data?: unknown; error?: string }>;
     resendVerification: (email: string) =>

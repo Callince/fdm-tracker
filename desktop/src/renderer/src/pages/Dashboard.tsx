@@ -6,6 +6,7 @@ import { LiveTimer } from "@/components/LiveTimer";
 import { SessionLog } from "@/components/SessionLog";
 import { WeeklyStats } from "@/components/WeeklyStats";
 import { RangeTotals } from "@/components/RangeTotals";
+import { UpcomingMeetings } from "@/components/UpcomingMeetings";
 import { hms, relativeFromNow } from "@/lib/format";
 
 interface Props {
@@ -127,6 +128,9 @@ export function Dashboard({ status }: Props) {
 
       {/* Week + month progress -------------------------------------------- */}
       <RangeTotals />
+
+      {/* Upcoming meetings ------------------------------------------------- */}
+      <UpcomingMeetings />
 
       {/* Two-column below -------------------------------------------------- */}
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">

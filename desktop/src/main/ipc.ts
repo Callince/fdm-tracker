@@ -479,6 +479,17 @@ export function registerIpc() {
     catch (e) { return { ok: false as const, error: e instanceof ApiError ? e.message : "list failed" }; }
   });
 
+  ipcMain.handle(IpcChannels.listMyMeetings, async () => {
+    try { return { ok: true as const, data: await api.listMyMeetings() }; }
+    catch (e) { return { ok: false as const, error: e instanceof ApiError ? e.message : "list failed" }; }
+  });
+
+  ipcMain.handle(IpcChannels.openExternal, async (_e, url: string) => {
+    if (!url) return;
+    if (!/^https?:\/\//i.test(url)) return;   // safety: only http(s)
+    void shell.openExternal(url);
+  });
+
   ipcMain.handle(IpcChannels.verifyEmail, async (_e, body: { email: string; code: string }) => {
     try { return { ok: true, data: await api.verifyEmail(body.email, body.code) }; }
     catch (e) { return { ok: false, error: e instanceof ApiError ? e.message : "verify failed" }; }
