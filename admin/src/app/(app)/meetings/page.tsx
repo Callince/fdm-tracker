@@ -14,8 +14,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { TableSkeleton } from "@/components/ui/table-skeleton";
 import { PageHeader } from "@/components/PageHeader";
-import { TeamBadge } from "@/components/TeamBadge";
-import { TeamSelect } from "@/components/TeamSelect";
+import { UserMultiSelect } from "@/components/UserMultiSelect";
 import type { Meeting } from "@/lib/types";
 
 const TZ = Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Kolkata";
@@ -34,7 +33,7 @@ export default function MeetingsPage() {
     scheduled_date: format(new Date(), "yyyy-MM-dd"),
     scheduled_time: "10:00",
     duration_minutes: 30,
-    team_id: null as string | null,
+    user_ids: [] as string[],
   });
   const [err, setErr] = useState<string | null>(null);
   const [toDelete, setToDelete] = useState<Meeting | null>(null);
@@ -47,7 +46,7 @@ export default function MeetingsPage() {
       setForm({
         title: "", meeting_link: "",
         scheduled_date: format(new Date(), "yyyy-MM-dd"),
-        scheduled_time: "10:00", duration_minutes: 30, team_id: null,
+        scheduled_time: "10:00", duration_minutes: 30, user_ids: [],
       });
     },
     onError: (e) => setErr(e instanceof ApiError ? e.message : "Failed"),
@@ -79,7 +78,7 @@ export default function MeetingsPage() {
       meeting_link: form.meeting_link.trim() || null,
       scheduled_at: local.toISOString(),
       duration_minutes: form.duration_minutes,
-      team_id: form.team_id,
+      user_ids: form.user_ids,
     });
   }
 
@@ -131,9 +130,22 @@ export default function MeetingsPage() {
                       </td>
                       <td className="px-4 py-3 font-medium">{m.title}</td>
                       <td className="px-4 py-3">
-                        {m.team_id
-                          ? <TeamBadge name={m.team_name} />
-                          : <span className="text-xs text-slate-500">All users</span>}
+                        {m.attendees.length === 0 ? (
+                          <span className="text-xs text-slate-500">All users</span>
+                        ) : (
+                          <div className="flex flex-wrap gap-1 max-w-[260px]">
+                            {m.attendees.slice(0, 3).map((a) => (
+                              <span key={a.id} className="text-[11px] rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 px-2 py-0.5">
+                                {a.name}
+                              </span>
+                            ))}
+                            {m.attendees.length > 3 && (
+                              <span className="text-[11px] text-slate-500">
+                                +{m.attendees.length - 3} more
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </td>
                       <td className="px-4 py-3 tabular-nums">{m.duration_minutes} min</td>
                       <td className="px-4 py-3">
@@ -201,8 +213,13 @@ export default function MeetingsPage() {
                  onChange={(e) => setForm({ ...form, meeting_link: e.target.value })} />
           <div>
             <label className="text-xs text-slate-500 block mb-1">Audience</label>
-            <TeamSelect value={form.team_id} onChange={(id) => setForm({ ...form, team_id: id })} />
-            <div className="mt-1 text-[11px] text-slate-400">No team selected = all users.</div>
+            <UserMultiSelect
+              value={form.user_ids}
+              onChange={(ids) => setForm({ ...form, user_ids: ids })}
+            />
+            <div className="mt-1 text-[11px] text-slate-400">
+              Pick specific people, or leave empty to broadcast to everyone.
+            </div>
           </div>
           {err && <div className="text-sm text-red-600 dark:text-red-400">{err}</div>}
           <button type="submit" className="hidden" />

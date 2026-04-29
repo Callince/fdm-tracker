@@ -18,14 +18,19 @@ export interface AdminUserRow {
   last_seen_at: string | null;
 }
 
+export interface AttendeeBrief {
+  id: string;
+  name: string;
+  email: string;
+}
+
 export interface Meeting {
   id: string;
   title: string;
   meeting_link: string | null;
   scheduled_at: string;
   duration_minutes: number;
-  team_id: string | null;
-  team_name: string | null;
+  attendees: AttendeeBrief[];
   created_at: string;
 }
 
@@ -34,7 +39,7 @@ export interface MeetingInput {
   meeting_link?: string | null;
   scheduled_at: string;
   duration_minutes: number;
-  team_id?: string | null;
+  user_ids: string[];   // empty = broadcast to all
 }
 
 export interface Holiday {
