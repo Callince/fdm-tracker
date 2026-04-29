@@ -14,6 +14,7 @@ export interface AdminUserRow {
   today_active_seconds: number;
   today_idle_seconds: number;
   today_break_seconds: number;
+  today_started_at: string | null;
   last_seen_at: string | null;
 }
 

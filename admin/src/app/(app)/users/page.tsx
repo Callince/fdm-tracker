@@ -15,7 +15,7 @@ import { TableSkeleton } from "@/components/ui/table-skeleton";
 import { PageHeader } from "@/components/PageHeader";
 import { TeamSelect } from "@/components/TeamSelect";
 import { TeamBadge } from "@/components/TeamBadge";
-import { hms, statusColor, statusLabel } from "@/lib/format";
+import { atTz, hms, statusColor, statusLabel } from "@/lib/format";
 
 type Filter = string | "none" | null;
 
@@ -301,7 +301,7 @@ export default function PeoplePage() {
       {/* Users table ----------------------------------------------------- */}
       <Card>
         <CardBody className="p-0">
-          {usersQ.isLoading && <TableSkeleton cols={7} rows={6} />}
+          {usersQ.isLoading && <TableSkeleton cols={8} rows={6} />}
           {!usersQ.isLoading && filteredUsers.length === 0 && (
             <EmptyState
               title={allUsers.length ? "No matches" : "No users yet"}
@@ -322,6 +322,7 @@ export default function PeoplePage() {
                     <th className="px-4 py-2 font-medium">Member</th>
                     <th className="px-4 py-2 font-medium">Team</th>
                     <th className="px-4 py-2 font-medium">Position</th>
+                    <th className="px-4 py-2 font-medium text-right">Started</th>
                     <th className="px-4 py-2 font-medium text-right">Active</th>
                     <th className="px-4 py-2 font-medium text-right">Idle</th>
                     <th className="px-4 py-2 font-medium text-right">Break</th>
@@ -359,6 +360,9 @@ export default function PeoplePage() {
                         <TeamBadge name={u.team_name} />
                       </td>
                       <td className="px-4 py-3 text-slate-700 dark:text-slate-300">{u.position ?? "—"}</td>
+                      <td className="px-4 py-3 text-right tabular-nums text-slate-600 dark:text-slate-400">
+                        {u.today_started_at ? atTz(u.today_started_at, u.timezone) : "—"}
+                      </td>
                       <td className="px-4 py-3 text-right tabular-nums text-active font-medium">{hms(u.today_active_seconds)}</td>
                       <td className="px-4 py-3 text-right tabular-nums text-idle">{hms(u.today_idle_seconds)}</td>
                       <td className="px-4 py-3 text-right tabular-nums text-brk">{hms(u.today_break_seconds)}</td>
