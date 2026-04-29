@@ -11,7 +11,7 @@ import { join } from "node:path";
 let widgetWin: BrowserWindow | null = null;
 
 const WIDGET_WIDTH = 260;
-const WIDGET_HEIGHT = 148;
+const WIDGET_HEIGHT = 200;
 const MARGIN = 24;
 
 function iconPath(): string {

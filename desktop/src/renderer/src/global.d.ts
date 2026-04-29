@@ -27,6 +27,8 @@ declare global {
       Promise<{ ok: boolean; data?: { teams: { id: string; name: string }[] }; error?: string }>;
     createPublicTeam: (name: string) =>
       Promise<{ ok: boolean; data?: { id: string; name: string }; error?: string }>;
+    listHolidays: () =>
+      Promise<{ ok: boolean; data?: { holidays: { id: string; date: string; name: string; kind: "holiday" | "working" }[] }; error?: string }>;
     verifyEmail: (email: string, code: string) =>
       Promise<{ ok: boolean; data?: unknown; error?: string }>;
     resendVerification: (email: string) =>

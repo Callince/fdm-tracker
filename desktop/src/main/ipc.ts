@@ -342,13 +342,17 @@ async function doEndWork() {
   const now = new Date().toISOString();
   syncWorker.forceFlushBucket();
   await syncWorker.forceSync();
-  try { await api.endSession(sid, now); } catch (e) { console.error("[work:end]", e); }
+  // End any open break BEFORE closing the session — otherwise the break's
+  // ended_at gets stamped by the server as part of session-end auto-cleanup,
+  // which is fine but skips the explicit attempt here. Doing it first means
+  // the per-break duration is exactly what the user intended.
   if (currentBreakId) {
-    try { await api.endBreak(currentBreakId, now); } catch { /* ignore */ }
+    try { await api.endBreak(currentBreakId, now); } catch (e) { console.error("[work:end-break]", e); }
     currentBreakId = null;
     currentBreakStartedAt = null;
     autoBreakId = null;
   }
+  try { await api.endSession(sid, now); } catch (e) { console.error("[work:end]", e); }
   sessionActive = false;
   currentSessionId = null;
   currentSessionStartedAt = null;
@@ -373,10 +377,22 @@ async function doEndBreak() {
   if (!currentBreakId) return;
   const bid = currentBreakId;
   const now = new Date().toISOString();
-  try { await api.endBreak(bid, now); } catch (e) { console.error("[break:end]", e); }
-  currentBreakId = null;
-  currentBreakStartedAt = null;
-  autoBreakId = null;
+  let ok = false;
+  try {
+    await api.endBreak(bid, now);
+    ok = true;
+  } catch (e) {
+    console.error("[break:end]", e);
+  }
+  // Only clear local state when the server confirmed the break ended. If
+  // the API call failed, keep currentBreakId so the UI still shows
+  // 'On break' and the user can retry — instead of going silently out of
+  // sync with the server.
+  if (ok) {
+    currentBreakId = null;
+    currentBreakStartedAt = null;
+    autoBreakId = null;
+  }
   pushStatus();
   void refreshTodayTotals();
 }
@@ -456,6 +472,11 @@ export function registerIpc() {
   ipcMain.handle(IpcChannels.createPublicTeam, async (_e, body: { name: string }) => {
     try { return { ok: true as const, data: await api.createPublicTeam(body.name) }; }
     catch (e) { return { ok: false as const, error: e instanceof ApiError ? e.message : "create team failed" }; }
+  });
+
+  ipcMain.handle(IpcChannels.listHolidays, async () => {
+    try { return { ok: true as const, data: await api.listHolidays() }; }
+    catch (e) { return { ok: false as const, error: e instanceof ApiError ? e.message : "list failed" }; }
   });
 
   ipcMain.handle(IpcChannels.verifyEmail, async (_e, body: { email: string; code: string }) => {

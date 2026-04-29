@@ -28,6 +28,8 @@ const api = {
     ipcRenderer.invoke(IpcChannels.listPublicTeams) as Promise<{ ok: boolean; data?: { teams: { id: string; name: string }[] }; error?: string }>,
   createPublicTeam: (name: string) =>
     ipcRenderer.invoke(IpcChannels.createPublicTeam, { name }) as Promise<{ ok: boolean; data?: { id: string; name: string }; error?: string }>,
+  listHolidays: () =>
+    ipcRenderer.invoke(IpcChannels.listHolidays) as Promise<{ ok: boolean; data?: { holidays: { id: string; date: string; name: string; kind: "holiday" | "working" }[] }; error?: string }>,
   verifyEmail: (email: string, code: string) =>
     ipcRenderer.invoke(IpcChannels.verifyEmail, { email, code }) as Promise<{ ok: boolean; data?: unknown; error?: string }>,
   resendVerification: (email: string) =>
