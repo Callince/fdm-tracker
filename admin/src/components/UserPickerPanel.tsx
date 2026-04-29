@@ -120,7 +120,7 @@ export function UserPickerPanel({ value, onChange, emptyHint = "No one picked ye
       </div>
 
       {/* List */}
-      <div className="max-h-72 overflow-y-auto">
+      <div className="max-h-56 overflow-y-auto">
         {usersQ.isLoading && <div className="p-3 text-sm text-slate-500">Loading…</div>}
         {!usersQ.isLoading && filtered.length === 0 && (
           <div className="p-4 text-sm text-slate-500 text-center">No people match.</div>
