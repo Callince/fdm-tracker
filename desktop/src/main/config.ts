@@ -1,9 +1,19 @@
 /**
- * App-level configuration. Read from env at startup, fixed for the session.
- * The API base can be overridden per-build with VITE_API_BASE or FDM_API_BASE.
+ * App-level configuration. Fixed for the session.
+ *
+ * The default `apiBase` is the production API. We intentionally do NOT read
+ * `process.env.FDM_API_BASE` at runtime — env vars on the end user's PC
+ * are out of our control. To target a different API for local dev, set
+ * `__FDM_API_BASE__` via Vite's `define` (in electron.vite.config.ts) at
+ * build time.
  */
+declare const __FDM_API_BASE__: string | undefined;
+
+const buildTimeBase: string | undefined =
+  typeof __FDM_API_BASE__ !== "undefined" ? __FDM_API_BASE__ : undefined;
+
 export const config = {
-  apiBase: process.env.FDM_API_BASE ?? "http://127.0.0.1:8000",
+  apiBase: buildTimeBase ?? "https://api.fourdm.services",
   sampleIntervalMs: 10_000,        // idle-check cadence
   bucketSeconds: 60,               // one row == 60s of activity
   syncIntervalMs: 60_000,          // push to server every 60s

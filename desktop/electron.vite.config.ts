@@ -2,6 +2,8 @@ import { resolve } from "node:path";
 import { defineConfig, externalizeDepsPlugin } from "electron-vite";
 import react from "@vitejs/plugin-react";
 
+const apiBase = process.env.FDM_API_BASE ?? "https://api.fourdm.services";
+
 export default defineConfig({
   main: {
     plugins: [externalizeDepsPlugin()],
@@ -9,6 +11,7 @@ export default defineConfig({
       rollupOptions: { input: { index: resolve(__dirname, "src/main/index.ts") } },
     },
     resolve: { alias: { "@shared": resolve(__dirname, "src/shared") } },
+    define: { __FDM_API_BASE__: JSON.stringify(apiBase) },
   },
   preload: {
     plugins: [externalizeDepsPlugin()],
