@@ -96,22 +96,6 @@ def _live_day_summary(
 ) -> DailySummaryOut:
     start_utc, end_utc = _day_window_utc(d, tz, workday_start_hour)
 
-    act = db.execute(
-        select(
-            func.coalesce(func.sum(ActivityLog.active_seconds), 0),
-            func.coalesce(func.sum(ActivityLog.idle_seconds), 0),
-            func.min(ActivityLog.bucket_start),
-            func.max(ActivityLog.bucket_start),
-        ).where(
-            and_(
-                ActivityLog.user_id == user.id,
-                ActivityLog.bucket_start >= start_utc,
-                ActivityLog.bucket_start < end_utc,
-            )
-        )
-    ).one()
-    active_s, idle_s, first_at, last_at = act
-
     break_rows = db.execute(
         select(BreakLog.started_at, BreakLog.ended_at).where(
             and_(
@@ -121,16 +105,93 @@ def _live_day_summary(
             )
         )
     ).all()
-    break_s = 0
-    for st, en in break_rows:
-        if en is None:
+    breaks: list[tuple[datetime, datetime]] = [
+        (st, en) for st, en in break_rows if en is not None
+    ]
+    break_s = sum(int((en - st).total_seconds()) for st, en in breaks)
+
+    # Fast path: no breaks, just sum the buckets directly.
+    if not breaks:
+        act = db.execute(
+            select(
+                func.coalesce(func.sum(ActivityLog.active_seconds), 0),
+                func.coalesce(func.sum(ActivityLog.idle_seconds), 0),
+                func.min(ActivityLog.bucket_start),
+                func.max(ActivityLog.bucket_start),
+            ).where(
+                and_(
+                    ActivityLog.user_id == user.id,
+                    ActivityLog.bucket_start >= start_utc,
+                    ActivityLog.bucket_start < end_utc,
+                )
+            )
+        ).one()
+        active_s, idle_s, first_at, last_at = act
+        return DailySummaryOut(
+            date=d,
+            total_active_seconds=int(active_s),
+            total_idle_seconds=int(idle_s),
+            total_break_seconds=0,
+            first_activity_at=first_at,
+            last_activity_at=last_at,
+        )
+
+    # Slow path: fetch individual buckets and subtract break overlap.
+    bucket_rows = db.execute(
+        select(
+            ActivityLog.bucket_start,
+            ActivityLog.active_seconds,
+            ActivityLog.idle_seconds,
+        ).where(
+            and_(
+                ActivityLog.user_id == user.id,
+                ActivityLog.bucket_start >= start_utc,
+                ActivityLog.bucket_start < end_utc,
+            )
+        ).order_by(ActivityLog.bucket_start.asc())
+    ).all()
+
+    active_total = 0
+    idle_total = 0
+    first_at: datetime | None = None
+    last_at: datetime | None = None
+    bucket_seconds = 60
+
+    for bs, b_active, b_idle in bucket_rows:
+        if first_at is None or bs < first_at:
+            first_at = bs
+        if last_at is None or bs > last_at:
+            last_at = bs
+
+        be = bs + timedelta(seconds=bucket_seconds)
+        # Total seconds of this bucket that fall inside any break.
+        overlap = 0
+        for brk_st, brk_en in breaks:
+            if brk_en <= bs or brk_st >= be:
+                continue
+            o_start = max(bs, brk_st)
+            o_end = min(be, brk_en)
+            overlap += int((o_end - o_start).total_seconds())
+        if overlap <= 0:
+            active_total += int(b_active)
+            idle_total += int(b_idle)
             continue
-        break_s += int((en - st).total_seconds())
+
+        base_total = int(b_active) + int(b_idle)
+        if base_total <= 0:
+            continue
+        # Cap overlap at how much active+idle we actually have on file.
+        overlap = min(overlap, base_total)
+        # Subtract proportionally so the active/idle ratio is preserved.
+        active_remove = round(overlap * (int(b_active) / base_total))
+        idle_remove = overlap - active_remove
+        active_total += int(b_active) - active_remove
+        idle_total += int(b_idle) - idle_remove
 
     return DailySummaryOut(
         date=d,
-        total_active_seconds=int(active_s),
-        total_idle_seconds=int(idle_s),
+        total_active_seconds=active_total,
+        total_idle_seconds=idle_total,
         total_break_seconds=break_s,
         first_activity_at=first_at,
         last_activity_at=last_at,

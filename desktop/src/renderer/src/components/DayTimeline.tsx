@@ -42,24 +42,56 @@ function humanDuration(secs: number): string {
   return `${m}m`;
 }
 
+/** Subtract every break window from a single activity range, returning 0–N
+ * pieces. Pieces preserve the original kind ("active"/"idle"). */
+function carveBreaks(r: Range, breaks: Range[]): Range[] {
+  let pieces: Range[] = [{ ...r }];
+  for (const b of breaks) {
+    const next: Range[] = [];
+    for (const p of pieces) {
+      if (b.end <= p.start || b.start >= p.end) {
+        next.push(p);
+        continue;
+      }
+      if (b.start > p.start) next.push({ start: p.start, end: b.start, kind: p.kind });
+      if (b.end < p.end) next.push({ start: b.end, end: p.end, kind: p.kind });
+    }
+    pieces = next;
+  }
+  return pieces;
+}
+
 function collapseBuckets(detail: DayDetail): Range[] {
-  const out: Range[] = [];
+  // Build break ranges first — they take priority over active/idle when they
+  // overlap, because a break stops both.
+  const breaks: Range[] = [];
+  for (const b of detail.breaks) {
+    if (!b.ended_at) continue;
+    breaks.push({ start: parseISO(b.started_at), end: parseISO(b.ended_at), kind: "break" });
+  }
+
+  // Coalesce contiguous same-kind buckets into ranges.
+  const coalesced: Range[] = [];
   const sorted = [...detail.buckets].sort((a, b) => a.bucket_start.localeCompare(b.bucket_start));
   for (const b of sorted) {
     const start = parseISO(b.bucket_start);
     const end = new Date(start.getTime() + 60_000);
     const kind: RangeKind = b.active_seconds >= b.idle_seconds ? "active" : "idle";
-    const last = out.at(-1);
+    const last = coalesced.at(-1);
     if (last && last.kind === kind && Math.abs(last.end.getTime() - start.getTime()) <= 1500) {
       last.end = end;
     } else {
-      out.push({ start, end, kind });
+      coalesced.push({ start, end, kind });
     }
   }
-  for (const b of detail.breaks) {
-    if (!b.ended_at) continue;
-    out.push({ start: parseISO(b.started_at), end: parseISO(b.ended_at), kind: "break" });
+
+  // Carve break windows out of each active/idle range so they don't visually
+  // overlap a break.
+  const out: Range[] = [];
+  for (const r of coalesced) {
+    out.push(...carveBreaks(r, breaks));
   }
+  out.push(...breaks);
   return out.sort((a, b) => a.start.getTime() - b.start.getTime());
 }
 
