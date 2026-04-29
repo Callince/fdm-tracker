@@ -19,7 +19,7 @@ admin_router = APIRouter(prefix="/admin/holidays", tags=["admin-holidays"])
 
 
 def _to_out(h: Holiday) -> HolidayOut:
-    return HolidayOut(id=h.id, date=h.date, name=h.name)
+    return HolidayOut(id=h.id, date=h.date, name=h.name, kind=h.kind)  # type: ignore[arg-type]
 
 
 @public_router.get("", response_model=HolidayList)
@@ -44,7 +44,7 @@ def admin_create_holiday(
     existing = db.execute(select(Holiday).where(Holiday.date == body.date)).scalar_one_or_none()
     if existing is not None:
         raise HTTPException(status.HTTP_409_CONFLICT, "holiday already set for that date")
-    h = Holiday(date=body.date, name=body.name.strip())
+    h = Holiday(date=body.date, name=body.name.strip(), kind=body.kind)
     db.add(h)
     db.commit()
     db.refresh(h)

@@ -181,17 +181,20 @@ def me_range_totals(
     total_b = sum(d.total_break_seconds for d in days)
     org = db.get(OrgSettings, 1) or OrgSettings(id=1)
 
-    holiday_dates = {
-        h for (h,) in db.execute(
-            select(Holiday.date).where(
-                and_(Holiday.date >= from_date, Holiday.date <= to_date)
-            )
-        ).all()
-    }
+    cal_rows = db.execute(
+        select(Holiday.date, Holiday.kind).where(
+            and_(Holiday.date >= from_date, Holiday.date <= to_date)
+        )
+    ).all()
+    off_dates = {d for d, k in cal_rows if k == "holiday"}
+    working_exception_dates = {d for d, k in cal_rows if k == "working"}
     working_days = 0
     cursor = from_date
     while cursor <= to_date:
-        if cursor.weekday() < 5 and cursor not in holiday_dates:
+        is_weekday = cursor.weekday() < 5
+        if (is_weekday and cursor not in off_dates) or (
+            not is_weekday and cursor in working_exception_dates
+        ):
             working_days += 1
         cursor = cursor.fromordinal(cursor.toordinal() + 1)
 
@@ -203,7 +206,7 @@ def me_range_totals(
         total_break_seconds=total_b,
         days_counted=len(days),
         working_days=working_days,
-        holiday_count=len(holiday_dates),
+        holiday_count=len(off_dates),
         target_hours_per_day=org.target_hours_per_day,
     )
 

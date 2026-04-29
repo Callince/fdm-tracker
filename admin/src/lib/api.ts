@@ -224,7 +224,7 @@ export const api = {
   listHolidays: () =>
     request<{ holidays: Holiday[] }>("/admin/holidays"),
 
-  createHoliday: (body: { date: string; name: string }) =>
+  createHoliday: (body: { date: string; name: string; kind?: "holiday" | "working" }) =>
     request<Holiday>("/admin/holidays", { method: "POST", body: JSON.stringify(body) }),
 
   deleteHoliday: (id: string) =>

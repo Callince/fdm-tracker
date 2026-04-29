@@ -6,6 +6,7 @@ import { format, parseISO } from "date-fns";
 import { formatInTimeZone } from "date-fns-tz";
 import { Plus, Trash2, ExternalLink } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
+import { extractUrl } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardBody } from "@/components/ui/card";
@@ -14,7 +15,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { TableSkeleton } from "@/components/ui/table-skeleton";
 import { PageHeader } from "@/components/PageHeader";
-import { UserMultiSelect } from "@/components/UserMultiSelect";
+import { UserPickerPanel } from "@/components/UserPickerPanel";
 import type { Meeting } from "@/lib/types";
 
 const TZ = Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Kolkata";
@@ -71,6 +72,11 @@ export default function MeetingsPage() {
     const local = new Date(`${form.scheduled_date}T${form.scheduled_time}:00`);
     if (isNaN(local.getTime())) {
       setErr("Invalid date/time");
+      return;
+    }
+    // Keep a 1-min slack so the user can submit at the exact minute they chose.
+    if (local.getTime() < Date.now() - 60_000) {
+      setErr("Pick the current time or a later one — past meetings can't be scheduled.");
       return;
     }
     createM.mutate({
@@ -149,11 +155,20 @@ export default function MeetingsPage() {
                       </td>
                       <td className="px-4 py-3 tabular-nums">{m.duration_minutes} min</td>
                       <td className="px-4 py-3">
-                        {m.meeting_link
-                          ? <a href={m.meeting_link} target="_blank" rel="noreferrer" className="text-brand-dark dark:text-brand-light inline-flex items-center gap-1 hover:underline">
+                        {(() => {
+                          const url = extractUrl(m.meeting_link);
+                          if (!url) return <span className="text-slate-400">—</span>;
+                          return (
+                            <a
+                              href={url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-brand-dark dark:text-brand-light inline-flex items-center gap-1 hover:underline"
+                            >
                               join <ExternalLink size={12} />
                             </a>
-                          : <span className="text-slate-400">—</span>}
+                          );
+                        })()}
                       </td>
                       <td className="px-4 py-3 text-right">
                         <button
@@ -179,7 +194,7 @@ export default function MeetingsPage() {
         onClose={() => setOpen(false)}
         title="Schedule a meeting"
         subtitle={`Time is interpreted in your browser's timezone (${TZ}).`}
-        size="md"
+        size="lg"
         footer={
           <>
             <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
@@ -195,13 +210,27 @@ export default function MeetingsPage() {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs text-slate-500 block mb-1">Date</label>
-              <Input type="date" value={form.scheduled_date}
-                     onChange={(e) => setForm({ ...form, scheduled_date: e.target.value })} required />
+              <Input
+                type="date"
+                value={form.scheduled_date}
+                min={format(new Date(), "yyyy-MM-dd")}
+                onChange={(e) => setForm({ ...form, scheduled_date: e.target.value })}
+                required
+              />
             </div>
             <div>
               <label className="text-xs text-slate-500 block mb-1">Time</label>
-              <Input type="time" value={form.scheduled_time}
-                     onChange={(e) => setForm({ ...form, scheduled_time: e.target.value })} required />
+              <Input
+                type="time"
+                value={form.scheduled_time}
+                min={
+                  form.scheduled_date === format(new Date(), "yyyy-MM-dd")
+                    ? format(new Date(), "HH:mm")
+                    : undefined
+                }
+                onChange={(e) => setForm({ ...form, scheduled_time: e.target.value })}
+                required
+              />
             </div>
           </div>
           <div>
@@ -212,14 +241,16 @@ export default function MeetingsPage() {
           <Input placeholder="Meeting link (optional — Meet, Zoom, …)" value={form.meeting_link}
                  onChange={(e) => setForm({ ...form, meeting_link: e.target.value })} />
           <div>
-            <label className="text-xs text-slate-500 block mb-1">Audience</label>
-            <UserMultiSelect
+            <div className="flex items-baseline justify-between mb-1">
+              <label className="text-xs text-slate-500 dark:text-slate-400">Audience</label>
+              <span className="text-[11px] text-slate-400 dark:text-slate-500">
+                Empty = broadcast to all users
+              </span>
+            </div>
+            <UserPickerPanel
               value={form.user_ids}
               onChange={(ids) => setForm({ ...form, user_ids: ids })}
             />
-            <div className="mt-1 text-[11px] text-slate-400">
-              Pick specific people, or leave empty to broadcast to everyone.
-            </div>
           </div>
           {err && <div className="text-sm text-red-600 dark:text-red-400">{err}</div>}
           <button type="submit" className="hidden" />
