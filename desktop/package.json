@@ -1,6 +1,6 @@
 {
   "name": "fdm-tracker-desktop",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "FDM Tracker — employee-facing desktop client",
   "author": "Fourth Dimension Media Solutions",
   "private": true,
