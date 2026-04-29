@@ -12,6 +12,7 @@ export function CalendarPage() {
   const [month, setMonth] = useState(() => startOfMonth(new Date()));
   const [day, setDay] = useState<Date>(() => new Date());
   const [days, setDays] = useState<DailySummary[]>([]);
+  const [holidays, setHolidays] = useState<{ id: string; date: string; name: string; kind: "holiday" | "working" }[]>([]);
   const [detail, setDetail] = useState<DayDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -26,6 +27,21 @@ export function CalendarPage() {
       .catch((e: Error) => setErr(e.message))
       .finally(() => setLoading(false));
   }, [month]);
+
+  useEffect(() => {
+    void window.fdm.listHolidays().then((r) => {
+      if (r.ok && r.data) setHolidays(r.data.holidays);
+    });
+    // Refresh on window focus so admin changes show up next time the user
+    // looks at this page.
+    const onFocus = () => {
+      void window.fdm.listHolidays().then((r) => {
+        if (r.ok && r.data) setHolidays(r.data.holidays);
+      });
+    };
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, []);
 
   useEffect(() => {
     const iso = format(day, "yyyy-MM-dd");
@@ -52,7 +68,13 @@ export function CalendarPage() {
         <CardBody>
           {loading && <div className="text-sm text-slate-500">Loading…</div>}
           {err && <div className="text-sm text-red-600">{err}</div>}
-          <CalendarGrid month={month} days={days} selected={day} onSelect={setDay} />
+          <CalendarGrid
+            month={month}
+            days={days}
+            holidays={holidays}
+            selected={day}
+            onSelect={setDay}
+          />
         </CardBody>
       </Card>
 

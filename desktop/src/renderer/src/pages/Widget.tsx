@@ -1,16 +1,21 @@
-import { useState } from "react";
-import { X, GripHorizontal } from "lucide-react";
+import { useEffect, useState } from "react";
+import { ChevronDown, ChevronUp, GripHorizontal, X } from "lucide-react";
 import type { AppStatus } from "@shared/types";
 import { LiveTimer } from "@/components/LiveTimer";
+import { hms } from "@/lib/format";
 import { useAppStatus } from "@/lib/status";
+
+const EXPANDED_KEY = "fdm.widget.expanded";
 
 /**
  * Compact floating panel rendered inside the always-on-top widget window.
- * Mirrors the Dashboard action state machine but in ~260×148 px.
+ * Mirrors the Dashboard action state machine in a small footprint, with a
+ * collapsible "today totals" section. The window itself is transparent —
+ * the Shell's translucent background lets the desktop bleed through.
  */
 export function Widget() {
   const status = useAppStatus();
-  if (!status) return <Shell><div className="text-[11px] text-slate-400">Loading…</div></Shell>;
+  if (!status) return <Shell><div className="text-[11px] text-slate-300">Loading…</div></Shell>;
 
   if (!status.signed_in) {
     return (
@@ -27,6 +32,19 @@ export function Widget() {
 
 function WidgetBody({ status }: { status: AppStatus }) {
   const [busy, setBusy] = useState<"start" | "end" | "break" | "resume" | null>(null);
+  const [expanded, setExpanded] = useState(false);
+
+  useEffect(() => {
+    setExpanded(localStorage.getItem(EXPANDED_KEY) === "1");
+  }, []);
+
+  function toggleExpanded() {
+    setExpanded((prev) => {
+      const next = !prev;
+      localStorage.setItem(EXPANDED_KEY, next ? "1" : "0");
+      return next;
+    });
+  }
 
   async function act(kind: "start" | "end" | "break" | "resume") {
     setBusy(kind);
@@ -52,7 +70,7 @@ function WidgetBody({ status }: { status: AppStatus }) {
       ? "On break"
       : "Working";
   const stateColor = !status.session_active
-    ? "text-slate-400"
+    ? "text-slate-300"
     : status.on_break
       ? "text-brk"
       : "text-active";
@@ -71,7 +89,7 @@ function WidgetBody({ status }: { status: AppStatus }) {
             className={`text-xl font-semibold tabular-nums ${timerColor}`}
           />
         ) : (
-          <span className="text-xl font-semibold tabular-nums text-slate-500">0:00:00</span>
+          <span className="text-xl font-semibold tabular-nums text-slate-400">0:00:00</span>
         )}
       </div>
 
@@ -118,22 +136,51 @@ function WidgetBody({ status }: { status: AppStatus }) {
           </>
         )}
       </div>
+
+      {/* Expand/collapse toggle for today totals */}
+      <button
+        type="button"
+        onClick={toggleExpanded}
+        className="no-drag mt-3 w-full inline-flex items-center justify-center gap-1 rounded text-[10px] uppercase tracking-wider text-slate-300 hover:text-white hover:bg-white/5 py-1"
+        style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+        title={expanded ? "Hide today's totals" : "Show today's totals"}
+      >
+        {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+        {expanded ? "Hide totals" : "Today totals"}
+      </button>
+
+      {expanded && (
+        <div className="mt-2 grid grid-cols-3 gap-1 text-[10px]">
+          <Stat label="Active" value={hms(status.today_active_seconds)} colorClass="text-active" />
+          <Stat label="Idle" value={hms(status.today_idle_seconds)} colorClass="text-idle" />
+          <Stat label="Break" value={hms(status.today_break_seconds)} colorClass="text-brk" />
+        </div>
+      )}
     </Shell>
+  );
+}
+
+function Stat({ label, value, colorClass }: { label: string; value: string; colorClass: string }) {
+  return (
+    <div className="rounded bg-white/5 px-1.5 py-1">
+      <div className="text-[9px] uppercase tracking-wider text-slate-400">{label}</div>
+      <div className={`tabular-nums font-medium ${colorClass}`}>{value}</div>
+    </div>
   );
 }
 
 function Shell({ children }: { children: React.ReactNode }) {
   return (
     <div
-      className="h-full w-full p-3 rounded-xl bg-slate-900/95 text-slate-100 shadow-lg border border-slate-700/80 backdrop-blur select-none"
+      className="h-full w-full p-3 rounded-xl bg-slate-900/55 text-slate-100 shadow-lg border border-white/10 backdrop-blur-md select-none"
       style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
     >
       <div className="flex items-center justify-between mb-1">
-        <GripHorizontal size={14} className="text-slate-500" />
+        <GripHorizontal size={14} className="text-slate-400/70" />
         <button
           type="button"
           onClick={() => { void window.fdm.hideWidget(); }}
-          className="no-drag rounded p-0.5 text-slate-400 hover:text-white hover:bg-slate-800"
+          className="no-drag rounded p-0.5 text-slate-300 hover:text-white hover:bg-white/10"
           style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
           title="Hide widget"
           aria-label="Hide widget"
