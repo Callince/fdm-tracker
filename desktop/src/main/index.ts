@@ -37,6 +37,7 @@ if (!gotLock) {
       });
       ipcOps.startTodayPoller();
       ipcOps.startNudgeMonitor();
+      ipcOps.startMeetingWatcher();
     }
 
     setInterval(() => ipcOps.setConnectionOnline(net.isOnline()), 5_000);

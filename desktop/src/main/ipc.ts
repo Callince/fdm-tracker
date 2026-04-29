@@ -12,6 +12,7 @@ import { config } from "./config";
 import { autoStart } from "./autoStart";
 import { localDb } from "./localDb";
 import { syncWorker } from "./syncWorker";
+import { meetingWatcher } from "./meetingWatcher";
 import { idleMonitor } from "./idleMonitor";
 import { getMainWindow, showMainWindow } from "./windows";
 import { getWidgetWindow, hideWidget, toggleWidget, isWidgetVisible } from "./widget";
@@ -71,6 +72,9 @@ function status(): AppStatus {
     end_of_day_reminder_hour: p.endOfDayReminderHour,
     dark_mode: p.darkMode,
     auto_break_on_idle: p.autoBreakOnIdle,
+    meeting_notifications_enabled: p.meetingNotificationsEnabled,
+    meeting_alarm_enabled: p.meetingAlarmEnabled,
+    meeting_reminder_minutes: p.meetingReminderMinutes,
     widget_visible: isWidgetVisible(),
   };
 }
@@ -414,6 +418,7 @@ export function registerIpc() {
       rebuildTrayWithHandlers({ startWork: doStartWork, endWork: doEndWork, startBreak: doStartBreak, endBreak: doEndBreak });
       startTodayPoller();
       startNudgeMonitor();
+      meetingWatcher.start();
       pushStatus();
       return { ok: true, profile };
     } catch (e) {
@@ -427,6 +432,7 @@ export function registerIpc() {
     syncWorker.stop();
     stopTodayPoller();
     stopNudgeMonitor();
+    meetingWatcher.stop();
     auth.clear();
     localDb.setState("session", "");
     sessionActive = false;
@@ -502,6 +508,21 @@ export function registerIpc() {
 
   ipcMain.handle(IpcChannels.setAutoBreakOnIdle, async (_e, enabled: boolean) => {
     prefs.set("autoBreakOnIdle", enabled);
+    pushStatus();
+  });
+
+  ipcMain.handle(IpcChannels.setMeetingNotifications, async (_e, enabled: boolean) => {
+    prefs.set("meetingNotificationsEnabled", enabled);
+    pushStatus();
+  });
+
+  ipcMain.handle(IpcChannels.setMeetingAlarm, async (_e, enabled: boolean) => {
+    prefs.set("meetingAlarmEnabled", enabled);
+    pushStatus();
+  });
+
+  ipcMain.handle(IpcChannels.setMeetingReminderMinutes, async (_e, minutes: number) => {
+    prefs.set("meetingReminderMinutes", Math.max(1, Math.min(60, Math.round(minutes))));
     pushStatus();
   });
 
@@ -591,6 +612,7 @@ export const ipcOps = {
   doStartWork, doEndWork, doStartBreak, doEndBreak, toggleBreak,
   rebuildTrayWithHandlers, pushStatus,
   refreshTodayTotals, startTodayPoller, startNudgeMonitor,
+  startMeetingWatcher: () => meetingWatcher.start(),
   setConnectionOnline(online: boolean) { connectionOnline = online; pushStatus(); },
   isSessionActive: () => sessionActive,
   isOnBreak: () => !!currentBreakId,

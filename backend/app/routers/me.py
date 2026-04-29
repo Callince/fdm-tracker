@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field
+from sqlalchemy import and_, select
 from sqlalchemy.orm import Session
 
 from ..database import get_db
@@ -151,6 +152,8 @@ class RangeTotals(BaseModel):
     total_idle_seconds: int
     total_break_seconds: int
     days_counted: int
+    working_days: int
+    holiday_count: int
     target_hours_per_day: int
 
 
@@ -163,9 +166,11 @@ def me_range_totals(
 ) -> RangeTotals:
     """Total active/idle/break seconds between from..to inclusive.
 
-    Powers the desktop dashboard's "this week" and "this month" tiles
-    against the admin-configured target hours per day.
+    `working_days` is the count of Mon–Fri days in the range minus any admin-
+    marked holidays falling on those weekdays. The desktop dashboard
+    multiplies this by `target_hours_per_day` to compute the target.
     """
+    from ..models.holiday import Holiday
     from ..models.settings import Settings as OrgSettings
 
     user, _ = current
@@ -175,6 +180,21 @@ def me_range_totals(
     total_i = sum(d.total_idle_seconds for d in days)
     total_b = sum(d.total_break_seconds for d in days)
     org = db.get(OrgSettings, 1) or OrgSettings(id=1)
+
+    holiday_dates = {
+        h for (h,) in db.execute(
+            select(Holiday.date).where(
+                and_(Holiday.date >= from_date, Holiday.date <= to_date)
+            )
+        ).all()
+    }
+    working_days = 0
+    cursor = from_date
+    while cursor <= to_date:
+        if cursor.weekday() < 5 and cursor not in holiday_dates:
+            working_days += 1
+        cursor = cursor.fromordinal(cursor.toordinal() + 1)
+
     return RangeTotals(
         from_date=from_date.isoformat(),
         to_date=to_date.isoformat(),
@@ -182,6 +202,8 @@ def me_range_totals(
         total_idle_seconds=total_i,
         total_break_seconds=total_b,
         days_counted=len(days),
+        working_days=working_days,
+        holiday_count=len(holiday_dates),
         target_hours_per_day=org.target_hours_per_day,
     )
 

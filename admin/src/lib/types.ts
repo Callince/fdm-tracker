@@ -18,6 +18,31 @@ export interface AdminUserRow {
   last_seen_at: string | null;
 }
 
+export interface Meeting {
+  id: string;
+  title: string;
+  meeting_link: string | null;
+  scheduled_at: string;
+  duration_minutes: number;
+  team_id: string | null;
+  team_name: string | null;
+  created_at: string;
+}
+
+export interface MeetingInput {
+  title: string;
+  meeting_link?: string | null;
+  scheduled_at: string;
+  duration_minutes: number;
+  team_id?: string | null;
+}
+
+export interface Holiday {
+  id: string;
+  date: string;
+  name: string;
+}
+
 export interface LoginResponse {
   tokens: {
     access_token: string;

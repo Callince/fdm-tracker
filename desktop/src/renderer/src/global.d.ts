@@ -43,6 +43,9 @@ declare global {
     setDarkMode: (enabled: boolean) => Promise<void>;
     setEodReminder: (hour: number | null) => Promise<void>;
     setAutoBreakOnIdle: (enabled: boolean) => Promise<void>;
+    setMeetingNotifications: (enabled: boolean) => Promise<void>;
+    setMeetingAlarm: (enabled: boolean) => Promise<void>;
+    setMeetingReminderMinutes: (minutes: number) => Promise<void>;
     toggleWidget: () => Promise<void>;
     hideWidget: () => Promise<void>;
 

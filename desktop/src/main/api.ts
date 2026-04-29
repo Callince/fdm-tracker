@@ -144,6 +144,24 @@ export const api = {
     });
   },
 
+  async listMyMeetings() {
+    return request<{ meetings: Array<{
+      id: string;
+      title: string;
+      meeting_link: string | null;
+      scheduled_at: string;
+      duration_minutes: number;
+      team_id: string | null;
+      team_name: string | null;
+    }> }>({ path: "/me/meetings" });
+  },
+
+  async listHolidays() {
+    return request<{ holidays: Array<{ id: string; date: string; name: string }> }>({
+      path: "/holidays",
+    });
+  },
+
   async verifyEmail(email: string, code: string) {
     return request<{ message: string }>({
       path: "/auth/verify-email", method: "POST", body: { email, code }, auth: false,

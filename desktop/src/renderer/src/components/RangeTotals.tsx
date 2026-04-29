@@ -7,6 +7,8 @@ interface ApiTotals {
   total_idle_seconds: number;
   total_break_seconds: number;
   days_counted: number;
+  working_days: number;
+  holiday_count: number;
   target_hours_per_day: number;
 }
 
@@ -38,11 +40,14 @@ export function RangeTotals() {
 
 function RangeCard({ label, data, kind }: { label: string; data: ApiTotals | null; kind: "week" | "month" }) {
   const today = new Date();
-  const elapsedDays = kind === "week"
-    ? Math.min(7, Math.floor((today.getTime() - startOfWeek(today, { weekStartsOn: 1 }).getTime()) / 86400000) + 1)
-    : Math.floor((today.getTime() - startOfMonth(today).getTime()) / 86400000) + 1;
+  // Backend tells us the count of Mon-Fri days in the range minus admin-marked
+  // holidays. Fallback for older API responses: count weekdays locally.
+  const fallbackWorkingDays = kind === "week"
+    ? Math.min(5, Math.floor((today.getTime() - startOfWeek(today, { weekStartsOn: 1 }).getTime()) / 86400000) + 1)
+    : countWeekdaysFrom(startOfMonth(today), today);
+  const workingDays = data?.working_days ?? fallbackWorkingDays;
   const target = data?.target_hours_per_day ?? 8;
-  const targetSec = target * 3600 * elapsedDays;
+  const targetSec = target * 3600 * workingDays;
   const activeSec = data?.total_active_seconds ?? 0;
   const idleSec = data?.total_idle_seconds ?? 0;
   const breakSec = data?.total_break_seconds ?? 0;
@@ -74,11 +79,25 @@ function RangeCard({ label, data, kind }: { label: string; data: ApiTotals | nul
       </div>
       <div className="mt-2 text-[10px] text-slate-400 dark:text-slate-500">
         {data
-          ? `target ${target}h × ${elapsedDays} day${elapsedDays === 1 ? "" : "s"} = ${hms(targetSec)}`
+          ? `target ${target}h × ${workingDays} working day${workingDays === 1 ? "" : "s"} = ${hms(targetSec)}${data.holiday_count ? ` (${data.holiday_count} holiday${data.holiday_count === 1 ? "" : "s"} excluded)` : ""}`
           : "loading target…"}
       </div>
     </div>
   );
+}
+
+function countWeekdaysFrom(start: Date, end: Date): number {
+  let n = 0;
+  const cursor = new Date(start);
+  cursor.setHours(0, 0, 0, 0);
+  const stop = new Date(end);
+  stop.setHours(0, 0, 0, 0);
+  while (cursor.getTime() <= stop.getTime()) {
+    const dow = cursor.getDay();
+    if (dow !== 0 && dow !== 6) n += 1;
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return n;
 }
 
 function Cell({ label, value, color }: { label: string; value: string; color: string }) {

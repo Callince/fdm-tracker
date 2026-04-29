@@ -30,6 +30,9 @@ interface AppPrefs {
   endOfDayReminderHour: number | null;  // null = disabled, 0–23
   darkMode: boolean;
   autoBreakOnIdle: boolean;
+  meetingNotificationsEnabled: boolean;
+  meetingAlarmEnabled: boolean;
+  meetingReminderMinutes: number;     // notify N minutes before meeting
 }
 
 const authStore = new Store<AuthState>({
@@ -46,6 +49,9 @@ const prefsStore = new Store<AppPrefs>({
     endOfDayReminderHour: null,
     darkMode: false,
     autoBreakOnIdle: false,
+    meetingNotificationsEnabled: true,
+    meetingAlarmEnabled: true,
+    meetingReminderMinutes: 5,
   },
 });
 
@@ -87,6 +93,9 @@ export const prefs = {
     endOfDayReminderHour: prefsStore.get("endOfDayReminderHour"),
     darkMode: prefsStore.get("darkMode"),
     autoBreakOnIdle: prefsStore.get("autoBreakOnIdle"),
+    meetingNotificationsEnabled: prefsStore.get("meetingNotificationsEnabled") ?? true,
+    meetingAlarmEnabled: prefsStore.get("meetingAlarmEnabled") ?? true,
+    meetingReminderMinutes: prefsStore.get("meetingReminderMinutes") ?? 5,
   }),
   set<K extends keyof AppPrefs>(key: K, value: AppPrefs[K]) {
     prefsStore.set(key, value);
