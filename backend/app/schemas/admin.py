@@ -58,6 +58,7 @@ class AdminUserRow(BaseModel):
     today_active_seconds: int
     today_idle_seconds: int
     today_break_seconds: int
+    today_started_at: Optional[datetime]
     last_seen_at: Optional[datetime]
 
 

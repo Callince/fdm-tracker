@@ -15,7 +15,7 @@ from ..models.settings import Settings as OrgSettings
 from ..models.team import Team
 from ..models.user import User
 from ..schemas.admin import AdminUserRow
-from .summary import _live_day_summary, _workday_date
+from .summary import _day_window_utc, _live_day_summary, _workday_date
 from zoneinfo import ZoneInfo
 
 # If we've heard nothing from a device for this long, call them offline.
@@ -85,6 +85,19 @@ def snapshot_all_users(db: Session) -> List[AdminUserRow]:
         tz = ZoneInfo(u.timezone)
         today = _workday_date(datetime.now(timezone.utc), tz, org.workday_start_hour)
         totals = _live_day_summary(db, u, today, tz, org.workday_start_hour)
+        start_utc, end_utc = _day_window_utc(today, tz, org.workday_start_hour)
+        today_started_at = db.execute(
+            select(WorkSession.started_at)
+            .where(
+                and_(
+                    WorkSession.user_id == u.id,
+                    WorkSession.started_at >= start_utc,
+                    WorkSession.started_at < end_utc,
+                )
+            )
+            .order_by(WorkSession.started_at.asc())
+            .limit(1)
+        ).scalar_one_or_none()
         rows.append(
             AdminUserRow(
                 id=u.id,
@@ -100,6 +113,7 @@ def snapshot_all_users(db: Session) -> List[AdminUserRow]:
                 today_active_seconds=totals.total_active_seconds,
                 today_idle_seconds=totals.total_idle_seconds,
                 today_break_seconds=totals.total_break_seconds,
+                today_started_at=today_started_at,
                 last_seen_at=last_seen,
             )
         )
