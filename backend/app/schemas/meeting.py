@@ -13,7 +13,10 @@ class MeetingCreate(BaseModel):
     meeting_link: Optional[str] = Field(default=None, max_length=1024)
     scheduled_at: datetime
     duration_minutes: int = Field(default=30, ge=1, le=1440)
-    team_id: Optional[uuid.UUID] = None
+    user_ids: List[uuid.UUID] = Field(
+        default_factory=list,
+        description="Empty list = broadcast to all users.",
+    )
 
 
 class MeetingUpdate(BaseModel):
@@ -21,7 +24,13 @@ class MeetingUpdate(BaseModel):
     meeting_link: Optional[str] = Field(default=None, max_length=1024)
     scheduled_at: Optional[datetime] = None
     duration_minutes: Optional[int] = Field(default=None, ge=1, le=1440)
-    team_id: Optional[uuid.UUID] = None
+    user_ids: Optional[List[uuid.UUID]] = None
+
+
+class AttendeeBrief(BaseModel):
+    id: uuid.UUID
+    name: str
+    email: str
 
 
 class MeetingOut(BaseModel):
@@ -30,8 +39,7 @@ class MeetingOut(BaseModel):
     meeting_link: Optional[str]
     scheduled_at: datetime
     duration_minutes: int
-    team_id: Optional[uuid.UUID]
-    team_name: Optional[str]
+    attendees: List[AttendeeBrief]
     created_at: datetime
 
 
