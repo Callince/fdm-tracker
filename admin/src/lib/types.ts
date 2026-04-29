@@ -42,10 +42,13 @@ export interface MeetingInput {
   user_ids: string[];   // empty = broadcast to all
 }
 
+export type HolidayKind = "holiday" | "working";
+
 export interface Holiday {
   id: string;
   date: string;
   name: string;
+  kind: HolidayKind;
 }
 
 export interface LoginResponse {

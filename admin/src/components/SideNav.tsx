@@ -74,9 +74,12 @@ export function SideNav() {
         }`}
       >
         {collapsed ? (
-          <div className="h-8 w-8 rounded-md bg-brand text-white font-bold flex items-center justify-center text-sm">
-            4D
-          </div>
+          <img
+            src="/icon.png"
+            alt="FDM Tracker"
+            className="h-9 w-9 rounded-md select-none"
+            draggable={false}
+          />
         ) : (
           <>
             <img

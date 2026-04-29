@@ -17,6 +17,9 @@ class Holiday(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(128), nullable=False)
+    # 'holiday' = non-working (Mon-Fri marked off, or any day);
+    # 'working' = exception that turns a Sat/Sun into a working day.
+    kind: Mapped[str] = mapped_column(String(16), nullable=False, server_default="holiday")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

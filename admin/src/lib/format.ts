@@ -8,6 +8,19 @@ export function hms(totalSeconds: number): string {
   return `${h}h ${m.toString().padStart(2, "0")}m`;
 }
 
+/** Pull the first absolute http(s) URL from a possibly-noisy string.
+ * Returns null if no URL is present. Used to render the 'join' link
+ * defensively for legacy meetings whose link was pasted with surrounding
+ * text. */
+export function extractUrl(s: string | null | undefined): string | null {
+  if (!s) return null;
+  const trimmed = s.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) return trimmed;
+  const m = trimmed.match(/https?:\/\/\S+/);
+  return m ? m[0] : null;
+}
+
 export function atTz(iso: string | null, tz: string, fmt = "HH:mm"): string {
   if (!iso) return "--:--";
   return formatInTimeZone(parseISO(iso), tz, fmt);

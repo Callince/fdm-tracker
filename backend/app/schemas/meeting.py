@@ -2,10 +2,45 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+
+# 5 min slack so a network round-trip doesn't cause "past" rejections.
+PAST_SLACK = timedelta(minutes=5)
+
+
+def _ensure_future(v: datetime) -> datetime:
+    now = datetime.now(timezone.utc)
+    # Pydantic gives us a timezone-aware datetime if the request includes one;
+    # naive inputs are treated as UTC.
+    candidate = v if v.tzinfo is not None else v.replace(tzinfo=timezone.utc)
+    if candidate < now - PAST_SLACK:
+        raise ValueError("scheduled_at must be the current date/time or in the future")
+    return v
+
+
+def _normalize_link(v: Optional[str]) -> Optional[str]:
+    """Accept blank/None as 'no link'. If a value is supplied, it must be an
+    absolute http(s) URL — pasting a calendar description string ('To join the
+    meeting, click https://...') breaks the join button on the admin page,
+    so we strip surrounding text and pull the first URL instead of rejecting."""
+    if v is None:
+        return None
+    s = v.strip()
+    if not s:
+        return None
+    # Already a clean http(s) URL — common case.
+    if s.startswith("http://") or s.startswith("https://"):
+        return s
+    # Try to extract the first http(s) URL from a freeform string.
+    import re
+    m = re.search(r"https?://\S+", s)
+    if m:
+        return m.group(0)
+    raise ValueError("meeting_link must be a full http or https URL")
 
 
 class MeetingCreate(BaseModel):
@@ -18,6 +53,9 @@ class MeetingCreate(BaseModel):
         description="Empty list = broadcast to all users.",
     )
 
+    _check_future = field_validator("scheduled_at")(_ensure_future)
+    _norm_link = field_validator("meeting_link")(_normalize_link)
+
 
 class MeetingUpdate(BaseModel):
     title: Optional[str] = Field(default=None, min_length=1, max_length=255)
@@ -25,6 +63,18 @@ class MeetingUpdate(BaseModel):
     scheduled_at: Optional[datetime] = None
     duration_minutes: Optional[int] = Field(default=None, ge=1, le=1440)
     user_ids: Optional[List[uuid.UUID]] = None
+
+    @field_validator("scheduled_at")
+    @classmethod
+    def _validate_scheduled_at(cls, v: Optional[datetime]) -> Optional[datetime]:
+        if v is None:
+            return v
+        return _ensure_future(v)
+
+    @field_validator("meeting_link")
+    @classmethod
+    def _validate_link(cls, v: Optional[str]) -> Optional[str]:
+        return _normalize_link(v)
 
 
 class AttendeeBrief(BaseModel):
