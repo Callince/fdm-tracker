@@ -15,7 +15,7 @@ import { syncWorker } from "./syncWorker";
 import { meetingWatcher } from "./meetingWatcher";
 import { idleMonitor } from "./idleMonitor";
 import { getMainWindow, showMainWindow } from "./windows";
-import { getWidgetWindow, hideWidget, toggleWidget, isWidgetVisible } from "./widget";
+import { getWidgetWindow, hideWidget, toggleWidget, isWidgetVisible, setWidgetExpanded } from "./widget";
 import { rebuild as rebuildTray } from "./tray";
 import { notify } from "./notifications";
 
@@ -488,6 +488,10 @@ export function registerIpc() {
     if (!url) return;
     if (!/^https?:\/\//i.test(url)) return;   // safety: only http(s)
     void shell.openExternal(url);
+  });
+
+  ipcMain.handle(IpcChannels.setWidgetHeight, async (_e, expanded: boolean) => {
+    setWidgetExpanded(expanded);
   });
 
   ipcMain.handle(IpcChannels.verifyEmail, async (_e, body: { email: string; code: string }) => {

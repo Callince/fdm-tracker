@@ -11,7 +11,8 @@ import { join } from "node:path";
 let widgetWin: BrowserWindow | null = null;
 
 const WIDGET_WIDTH = 260;
-const WIDGET_HEIGHT = 200;
+const WIDGET_HEIGHT_COLLAPSED = 132;
+const WIDGET_HEIGHT_EXPANDED = 210;
 const MARGIN = 24;
 
 function iconPath(): string {
@@ -37,7 +38,7 @@ export function createWidget(): BrowserWindow {
   const pos = defaultPosition();
   widgetWin = new BrowserWindow({
     width: WIDGET_WIDTH,
-    height: WIDGET_HEIGHT,
+    height: WIDGET_HEIGHT_COLLAPSED,
     x: pos.x,
     y: pos.y,
     frame: false,
@@ -92,4 +93,11 @@ export function toggleWidget() {
 
 export function isWidgetVisible(): boolean {
   return !!(widgetWin && !widgetWin.isDestroyed() && widgetWin.isVisible());
+}
+
+export function setWidgetExpanded(expanded: boolean): void {
+  if (!widgetWin || widgetWin.isDestroyed()) return;
+  const target = expanded ? WIDGET_HEIGHT_EXPANDED : WIDGET_HEIGHT_COLLAPSED;
+  const [w] = widgetWin.getSize();
+  widgetWin.setSize(w, target, true);
 }
