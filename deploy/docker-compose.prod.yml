@@ -17,6 +17,7 @@ services:
       context: ../admin
       args:
         NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE}
+        NEXT_PUBLIC_SENTRY_DSN: ${NEXT_PUBLIC_SENTRY_DSN:-}
     restart: unless-stopped
     expose:
       - "3000"

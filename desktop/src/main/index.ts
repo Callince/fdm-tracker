@@ -7,7 +7,11 @@ import { auth } from "./auth";
 import { installGlobalErrorHandlers, log } from "./logger";
 import { buildAppMenu } from "./menu";
 import { startAutoUpdater } from "./autoUpdate";
+import { initSentryMain } from "./sentryInit";
 
+// Sentry must init BEFORE any other code that might throw — otherwise the
+// first error escapes capture.
+initSentryMain();
 installGlobalErrorHandlers();
 
 // Windows requires an AppUserModelId for native toast notifications to

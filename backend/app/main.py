@@ -7,9 +7,12 @@ import time
 import uuid
 from datetime import datetime, timezone
 
+import sentry_sdk
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from sentry_sdk.integrations.fastapi import FastApiIntegration
+from sentry_sdk.integrations.starlette import StarletteIntegration
 from sqlalchemy import delete, text
 
 from .config import get_settings
@@ -19,12 +22,35 @@ from .models.hmac_nonce import HmacNonce
 from .routers import activity, admin, auth, breaks, holidays, me, meetings, sessions, teams
 
 
+def _init_sentry(dsn: str, env: str) -> None:
+    """Initialize Sentry once at process start. No-op if dsn is empty."""
+    if not dsn:
+        return
+    sentry_sdk.init(
+        dsn=dsn,
+        environment=env,
+        # Errors only — performance tracing burns the free tier.
+        traces_sample_rate=0.0,
+        profiles_sample_rate=0.0,
+        # Capture default PII (request method, path, headers without auth).
+        # We never capture bodies on this API since they often contain
+        # passwords / verification codes.
+        send_default_pii=True,
+        max_request_body_size="never",
+        integrations=[
+            StarletteIntegration(transaction_style="endpoint"),
+            FastApiIntegration(transaction_style="endpoint"),
+        ],
+    )
+
+
 _log = get_logger("app")
 
 
 def create_app() -> FastAPI:
     settings = get_settings()
     configure_logging(settings.log_level)
+    _init_sentry(settings.sentry_dsn, settings.env)
 
     app = FastAPI(
         title="FDM Tracker API",
