@@ -63,6 +63,8 @@ export interface AppStatus {
   meeting_notifications_enabled: boolean;
   meeting_alarm_enabled: boolean;
   meeting_reminder_minutes: number;
+  auto_lock_minutes: number;
+  accessibility_granted: boolean;
   widget_visible: boolean;
 }
 

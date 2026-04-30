@@ -54,6 +54,7 @@ interface AppPrefs {
   meetingNotificationsEnabled: boolean;
   meetingAlarmEnabled: boolean;
   meetingReminderMinutes: number;
+  autoLockMinutes: number;            // 0 = disabled, otherwise lock after N min idle
 }
 
 const ENC_VERSION = 1;
@@ -103,6 +104,7 @@ const prefsStore = new Store<AppPrefs>({
     meetingNotificationsEnabled: true,
     meetingAlarmEnabled: true,
     meetingReminderMinutes: 5,
+    autoLockMinutes: 30,
   },
 });
 
@@ -187,6 +189,7 @@ export const prefs = {
     meetingNotificationsEnabled: prefsStore.get("meetingNotificationsEnabled") ?? true,
     meetingAlarmEnabled: prefsStore.get("meetingAlarmEnabled") ?? true,
     meetingReminderMinutes: prefsStore.get("meetingReminderMinutes") ?? 5,
+    autoLockMinutes: prefsStore.get("autoLockMinutes") ?? 30,
   }),
   set<K extends keyof AppPrefs>(key: K, value: AppPrefs[K]) {
     prefsStore.set(key, value);

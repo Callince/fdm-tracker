@@ -124,6 +124,12 @@ export function Settings({ status, onViewPrivacy }: Props) {
     setBusy(null);
   }
 
+  async function setAutoLock(minutes: number) {
+    setBusy("auto-lock");
+    await window.fdm.setAutoLockMinutes(minutes);
+    setBusy(null);
+  }
+
   async function exportData() {
     setMsg(null);
     setBusy("export");
@@ -233,6 +239,37 @@ export function Settings({ status, onViewPrivacy }: Props) {
                 </div>
               </span>
             </label>
+
+            <div className="space-y-1">
+              <div className="text-sm font-medium">Auto-lock when idle</div>
+              <div className="text-xs text-slate-500 dark:text-slate-400">
+                Lock the app and require sign-in again after this much idle time. End-of-day stops tracking and protects your data if you walk away.
+              </div>
+              <div className="flex items-center gap-2 mt-1">
+                <select
+                  className="h-9 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand/60"
+                  value={status.auto_lock_minutes}
+                  onChange={(e) => setAutoLock(parseInt(e.target.value, 10))}
+                  disabled={busy === "auto-lock"}
+                >
+                  <option value={0}>off</option>
+                  <option value={5}>5 minutes</option>
+                  <option value={15}>15 minutes</option>
+                  <option value={30}>30 minutes</option>
+                  <option value={60}>1 hour</option>
+                  <option value={120}>2 hours</option>
+                </select>
+              </div>
+            </div>
+
+            {!status.accessibility_granted && (
+              <div className="rounded-md border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">
+                <div className="font-medium">Accessibility permission needed (macOS)</div>
+                <div className="text-xs mt-1">
+                  Activity tracking is currently disabled. Open <span className="font-mono">System Settings → Privacy &amp; Security → Accessibility</span>, enable FDM Tracker, and quit + reopen the app.
+                </div>
+              </div>
+            )}
 
             <label className="flex items-start gap-3 text-sm">
               <input type="checkbox" checked={status.meeting_notifications_enabled} disabled={busy === "meeting-notif"}

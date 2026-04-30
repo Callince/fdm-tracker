@@ -55,9 +55,16 @@ if (!gotLock) {
         ipcOps.pushStatus();
         void ipcOps.refreshTodayTotals();
       });
+      // Restore an open session if one was persisted before the last quit,
+      // so a crash / shutdown doesn't make the user manually click 'Start
+      // work' again. Must run after syncWorker.start so setSession's bucket
+      // close path fires.
+      ipcOps.restoreOpenSession();
       ipcOps.startTodayPoller();
       ipcOps.startNudgeMonitor();
       ipcOps.startMeetingWatcher();
+      // macOS only: nudge the user to grant Accessibility if they haven't.
+      void ipcOps.promptAccessibility();
     }
 
     setInterval(() => ipcOps.setConnectionOnline(net.isOnline()), 5_000);

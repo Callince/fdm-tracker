@@ -13,6 +13,7 @@ import { autoStart } from "./autoStart";
 import { localDb } from "./localDb";
 import { syncWorker } from "./syncWorker";
 import { meetingWatcher } from "./meetingWatcher";
+import { isAccessibilityGranted, maybePromptAccessibility } from "./macAccessibility";
 import { idleMonitor } from "./idleMonitor";
 import { getMainWindow, showMainWindow } from "./windows";
 import { getWidgetWindow, hideWidget, toggleWidget, isWidgetVisible, setWidgetSize, type WidgetSize } from "./widget";
@@ -75,6 +76,8 @@ function status(): AppStatus {
     meeting_notifications_enabled: p.meetingNotificationsEnabled,
     meeting_alarm_enabled: p.meetingAlarmEnabled,
     meeting_reminder_minutes: p.meetingReminderMinutes,
+    auto_lock_minutes: p.autoLockMinutes,
+    accessibility_granted: isAccessibilityGranted(),
     widget_visible: isWidgetVisible(),
   };
 }
@@ -179,6 +182,7 @@ async function refreshProfile() {
 
 let nudgeTimer: NodeJS.Timeout | null = null;
 let autoBreakTimer: NodeJS.Timeout | null = null;
+let autoLockTimer: NodeJS.Timeout | null = null;
 function startNudgeMonitor() {
   if (!nudgeTimer) {
     nudgeTimer = setInterval(() => {
@@ -192,12 +196,50 @@ function startNudgeMonitor() {
       try { evaluateAutoBreak(); } catch (e) { console.warn("[auto-break]", (e as Error).message); }
     }, 20_000);
   }
+  if (!autoLockTimer) {
+    autoLockTimer = setInterval(() => {
+      try { evaluateAutoLock(); } catch (e) { console.warn("[auto-lock]", (e as Error).message); }
+    }, 30_000);
+  }
 }
 function stopNudgeMonitor() {
   if (nudgeTimer) clearInterval(nudgeTimer);
   nudgeTimer = null;
   if (autoBreakTimer) clearInterval(autoBreakTimer);
   autoBreakTimer = null;
+  if (autoLockTimer) clearInterval(autoLockTimer);
+  autoLockTimer = null;
+}
+
+let autoLocking = false;
+function evaluateAutoLock() {
+  if (autoLocking) return;
+  const a = auth.get();
+  if (!a.accessToken) return;
+  const p = prefs.get();
+  if (!p.autoLockMinutes || p.autoLockMinutes <= 0) return;
+  const idleSec = idleMonitor.lastIdleSeconds();
+  if (idleSec < p.autoLockMinutes * 60) return;
+  autoLocking = true;
+  void (async () => {
+    try {
+      console.warn(`[auto-lock] idle ${idleSec}s ≥ ${p.autoLockMinutes}m — locking`);
+      // End any active session first so the gap doesn't keep counting as idle.
+      if (sessionActive) await doEndWork();
+      try { await api.logout(); } catch { /* ignore */ }
+      syncWorker.stop();
+      stopTodayPoller();
+      stopNudgeMonitor();
+      meetingWatcher.stop();
+      auth.clear();
+      pushStatus();
+      // Bring the main window forward so the renderer's auth-redirect is
+      // visible — otherwise users wouldn't know they were locked out.
+      try { showMainWindow(); } catch { /* ignore */ }
+    } finally {
+      autoLocking = false;
+    }
+  })();
 }
 
 function evaluateAutoBreak() {
@@ -329,11 +371,43 @@ async function doStartWork() {
     currentSessionStartedAt = r.started_at ?? now;
     sessionActive = true;
     syncWorker.setSession(r.session_id);
+    // Persist so a crash / shutdown doesn't lose the open session.
+    localDb.setState("session", JSON.stringify({
+      id: r.session_id,
+      started_at: currentSessionStartedAt,
+    }));
   } catch (e) {
     console.error("[work:start]", e);
   }
   pushStatus();
   void refreshTodayTotals();
+}
+
+/** Restore an open session from local state when the app relaunches.
+ * Fills the gap between the last bucket and now as idle so the timeline
+ * has continuous coverage across the crash/restart. */
+export function restoreOpenSessionIfAny(): void {
+  if (sessionActive) return;
+  const raw = localDb.getState("session");
+  if (!raw) return;
+  let saved: { id: string; started_at: string } | null = null;
+  try { saved = JSON.parse(raw); } catch { saved = null; }
+  if (!saved || !saved.id || !saved.started_at) {
+    localDb.setState("session", "");
+    return;
+  }
+  // Drop sessions older than 24h — those are almost certainly stale (user
+  // forgot to End Work yesterday). Better to require a fresh Start than to
+  // record a 12-hour 'session' that's mostly idle.
+  const ageMs = Date.now() - new Date(saved.started_at).getTime();
+  if (ageMs > 24 * 60 * 60 * 1000 || ageMs < 0) {
+    localDb.setState("session", "");
+    return;
+  }
+  currentSessionId = saved.id;
+  currentSessionStartedAt = saved.started_at;
+  sessionActive = true;
+  syncWorker.setSession(saved.id);
 }
 
 async function doEndWork() {
@@ -357,6 +431,7 @@ async function doEndWork() {
   currentSessionId = null;
   currentSessionStartedAt = null;
   syncWorker.setSession(null);
+  localDb.setState("session", "");
   pushStatus();
   void refreshTodayTotals();
 }
@@ -436,6 +511,9 @@ export function registerIpc() {
       startNudgeMonitor();
       meetingWatcher.start();
       pushStatus();
+      // After a successful login on macOS, ensure the user has granted
+      // Accessibility permission so uiohook-napi can count keystrokes.
+      void maybePromptAccessibility();
       return { ok: true, profile };
     } catch (e) {
       return { ok: false, error: e instanceof ApiError ? e.message : "login failed" };
@@ -564,6 +642,11 @@ export function registerIpc() {
     pushStatus();
   });
 
+  ipcMain.handle(IpcChannels.setAutoLockMinutes, async (_e, minutes: number) => {
+    prefs.set("autoLockMinutes", Math.max(0, Math.min(240, Math.round(minutes))));
+    pushStatus();
+  });
+
   ipcMain.handle(IpcChannels.endBreakById, async (_e, body: { break_id: string }) => {
     await doEndBreakById(body.break_id);
     rebuildTrayWithHandlers({ startWork: doStartWork, endWork: doEndWork, startBreak: doStartBreak, endBreak: doEndBreak });
@@ -651,6 +734,8 @@ export const ipcOps = {
   rebuildTrayWithHandlers, pushStatus,
   refreshTodayTotals, startTodayPoller, startNudgeMonitor,
   startMeetingWatcher: () => meetingWatcher.start(),
+  restoreOpenSession: restoreOpenSessionIfAny,
+  promptAccessibility: maybePromptAccessibility,
   setConnectionOnline(online: boolean) { connectionOnline = online; pushStatus(); },
   isSessionActive: () => sessionActive,
   isOnBreak: () => !!currentBreakId,
