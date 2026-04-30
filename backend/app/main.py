@@ -1,18 +1,21 @@
 """FastAPI entrypoint."""
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 import uuid
+from datetime import datetime, timezone
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import text
+from sqlalchemy import delete, text
 
 from .config import get_settings
-from .database import engine
+from .database import SessionLocal, engine
 from .logging_config import configure_logging, get_logger
+from .models.hmac_nonce import HmacNonce
 from .routers import activity, admin, auth, breaks, holidays, me, meetings, sessions, teams
 
 
@@ -99,6 +102,25 @@ def create_app() -> FastAPI:
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
         return {"status": "ready"}
+
+    @app.on_event("startup")
+    async def _start_nonce_gc() -> None:
+        # Periodically expire old HMAC nonces. Runs out-of-band so requests
+        # never wait on a DELETE-where-expires_at scan.
+        async def loop() -> None:
+            while True:
+                try:
+                    with SessionLocal() as db:
+                        db.execute(
+                            delete(HmacNonce).where(
+                                HmacNonce.expires_at < datetime.now(timezone.utc)
+                            )
+                        )
+                        db.commit()
+                except Exception as e:  # noqa: BLE001
+                    _log.warning("nonce gc failed: %s", e)
+                await asyncio.sleep(300)   # every 5 min
+        asyncio.create_task(loop())
 
     return app
 
