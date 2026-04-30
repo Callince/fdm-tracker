@@ -55,14 +55,13 @@ export function AppShell({ status, active, onNavigate, onLogout, children }: Pro
 
         {/* Brand */}
         <div className="shrink-0 px-4 py-4 flex items-center gap-3 border-b border-slate-100 dark:border-slate-800 pl-5">
-          <div className="h-9 w-9 rounded-lg overflow-hidden bg-gradient-to-br from-brand to-brand-dark flex items-center justify-center shrink-0 shadow-md ring-1 ring-white/20">
-            <img
-              src="./icon.png"
-              alt=""
-              className="h-7 w-7 object-contain"
-              draggable={false}
-              onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
-            />
+          <div className="h-9 w-9 rounded-lg bg-gradient-to-br from-brand to-brand-dark flex items-center justify-center shrink-0 shadow-md ring-1 ring-white/20 text-white">
+            <svg viewBox="0 0 32 32" width={20} height={20} aria-hidden>
+              <path
+                fill="currentColor"
+                d="M18 4v14h4v4h-4v6h-4v-6H2v-3L17 4h1Zm-4 6L6 18h8v-8Z"
+              />
+            </svg>
           </div>
           <div className="min-w-0">
             <div className="text-[13px] font-semibold tracking-tight text-slate-900 dark:text-slate-100">

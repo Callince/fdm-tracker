@@ -67,21 +67,22 @@ export function CalendarPage() {
           </div>
         </CardHeader>
         <CardBody>
-          {loading && (
+          {err && <div className="text-sm text-red-600 mb-2">{err}</div>}
+          {loading && days.length === 0 ? (
             <div className="grid grid-cols-7 gap-1">
               {Array.from({ length: 35 }).map((_, i) => (
-                <Skeleton key={i} className="h-16 lg:h-20" />
+                <Skeleton key={i} className="h-16 lg:h-20 xl:h-24" />
               ))}
             </div>
+          ) : (
+            <CalendarGrid
+              month={month}
+              days={days}
+              holidays={holidays}
+              selected={day}
+              onSelect={setDay}
+            />
           )}
-          {err && <div className="text-sm text-red-600">{err}</div>}
-          <CalendarGrid
-            month={month}
-            days={days}
-            holidays={holidays}
-            selected={day}
-            onSelect={setDay}
-          />
         </CardBody>
       </Card>
 
