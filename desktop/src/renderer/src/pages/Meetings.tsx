@@ -8,6 +8,7 @@ interface Meeting {
   id: string;
   title: string;
   meeting_link: string | null;
+  meeting_password: string | null;
   scheduled_at: string;
   duration_minutes: number;
   attendees: { id: string; name: string; email: string }[];
@@ -166,6 +167,12 @@ function Section({
                       ? "All users"
                       : `${m.attendees.length} ${m.attendees.length === 1 ? "person" : "people"} · ${m.attendees.slice(0, 3).map((a) => a.name).join(", ")}${m.attendees.length > 3 ? ` +${m.attendees.length - 3}` : ""}`}
                   </div>
+                  {m.meeting_password && (
+                    <div className="mt-1 inline-flex items-center gap-1 text-[11px] text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded">
+                      <span className="text-slate-400 dark:text-slate-500">pwd</span>
+                      <span className="font-mono select-all">{m.meeting_password}</span>
+                    </div>
+                  )}
                 </div>
                 {m.meeting_link && (
                   <button

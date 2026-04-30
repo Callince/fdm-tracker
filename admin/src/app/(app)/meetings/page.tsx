@@ -23,6 +23,7 @@ const TZ = Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Kolkata";
 const EMPTY_FORM = () => ({
   title: "",
   meeting_link: "",
+  meeting_password: "",
   scheduled_date: format(new Date(), "yyyy-MM-dd"),
   scheduled_time: "10:00",
   duration_minutes: 30,
@@ -80,6 +81,7 @@ export default function MeetingsPage() {
     setForm({
       title: m.title,
       meeting_link: m.meeting_link ?? "",
+      meeting_password: m.meeting_password ?? "",
       scheduled_date: formatInTimeZone(local, TZ, "yyyy-MM-dd"),
       scheduled_time: formatInTimeZone(local, TZ, "HH:mm"),
       duration_minutes: m.duration_minutes,
@@ -135,6 +137,7 @@ export default function MeetingsPage() {
     const payload = {
       title: form.title.trim(),
       meeting_link: normalizeMeetingLink(form.meeting_link),
+      meeting_password: form.meeting_password.trim() || null,
       scheduled_at: local.toISOString(),
       duration_minutes: form.duration_minutes,
       user_ids: form.user_ids,
@@ -218,14 +221,21 @@ export default function MeetingsPage() {
                           const url = extractUrl(m.meeting_link);
                           if (!url) return <span className="text-slate-400">—</span>;
                           return (
-                            <a
-                              href={url}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="text-brand-dark dark:text-brand-light inline-flex items-center gap-1 hover:underline"
-                            >
-                              join <ExternalLink size={12} />
-                            </a>
+                            <div className="space-y-0.5">
+                              <a
+                                href={url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-brand-dark dark:text-brand-light inline-flex items-center gap-1 hover:underline"
+                              >
+                                join <ExternalLink size={12} />
+                              </a>
+                              {m.meeting_password && (
+                                <div className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
+                                  pwd: {m.meeting_password}
+                                </div>
+                              )}
+                            </div>
                           );
                         })()}
                       </td>
@@ -309,14 +319,14 @@ export default function MeetingsPage() {
                    onChange={(e) => setForm({ ...form, duration_minutes: Number(e.target.value) })} />
           </div>
           <div>
-            <label className="text-xs text-slate-500 block mb-1">Meeting link or code</label>
+            <label className="text-xs text-slate-500 block mb-1">Meeting link</label>
             <Input
               placeholder="https://meet.google.com/abc-defg-hij  OR  abc-defg-hij"
               value={form.meeting_link}
               onChange={(e) => setForm({ ...form, meeting_link: e.target.value })}
             />
             <div className="mt-1 text-[11px] text-slate-400">
-              Paste a full URL (Meet, Zoom, …) or just a Google Meet code (e.g. <code className="font-mono">abc-defg-hij</code>)
+              Paste a full URL or just a Google Meet code (e.g. <code className="font-mono">abc-defg-hij</code>)
               or a Zoom meeting ID — we'll build the URL for you.
             </div>
             {form.meeting_link && (() => {
@@ -330,6 +340,18 @@ export default function MeetingsPage() {
               }
               return null;
             })()}
+          </div>
+          <div>
+            <label className="text-xs text-slate-500 block mb-1">Meeting password (optional)</label>
+            <Input
+              placeholder="e.g. 123456"
+              value={form.meeting_password}
+              onChange={(e) => setForm({ ...form, meeting_password: e.target.value })}
+              maxLength={128}
+            />
+            <div className="mt-1 text-[11px] text-slate-400">
+              For Zoom passcodes or any other gated meetings. Shown to attendees on the desktop and admin pages.
+            </div>
           </div>
           <div>
             <div className="flex items-baseline justify-between mb-1">
