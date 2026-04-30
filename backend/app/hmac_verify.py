@@ -47,7 +47,7 @@ def verify(
     path: str,
     body: bytes,
     max_skew_sec: int,
-) -> None:
+) -> ParsedSignature:
     if not header:
         raise ValueError("missing X-Device-Signature")
     parsed = parse_signature(header)
@@ -57,3 +57,4 @@ def verify(
     expected = compute_mac(secret, method, path, parsed.timestamp, body)
     if not hmac.compare_digest(expected, parsed.mac_hex):
         raise ValueError("signature mismatch")
+    return parsed

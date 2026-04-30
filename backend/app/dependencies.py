@@ -2,15 +2,19 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timedelta, timezone
 from typing import Annotated, Tuple
 
 from fastapi import Depends, Header, HTTPException, Request, status
+from sqlalchemy import delete
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from . import hmac_verify
 from .config import get_settings
 from .database import get_db
 from .models.device import Device
+from .models.hmac_nonce import HmacNonce
 from .models.user import User
 from .security import decode_token
 
@@ -38,6 +42,10 @@ def get_current_user(
     user = db.get(User, user_id)
     if user is None or not user.is_active:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "user not found / inactive")
+    if user.password_changed_at is not None:
+        iat = payload.get("iat")
+        if iat is None or datetime.fromtimestamp(int(iat), tz=timezone.utc) < user.password_changed_at:
+            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "token revoked")
     return user, device_id
 
 
@@ -54,6 +62,20 @@ def require_admin(current: CurrentUser) -> User:
 AdminUser = Annotated[User, Depends(require_admin)]
 
 
+def _record_nonce(db: Session, device_id: uuid.UUID, mac_hex: str, ttl_sec: int) -> None:
+    expires = datetime.now(timezone.utc) + timedelta(seconds=ttl_sec)
+    db.add(HmacNonce(device_id=device_id, mac_hex=mac_hex, expires_at=expires))
+    try:
+        db.flush()
+    except IntegrityError as e:
+        db.rollback()
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "HMAC: replay detected") from e
+
+
+def _gc_expired_nonces(db: Session) -> None:
+    db.execute(delete(HmacNonce).where(HmacNonce.expires_at < datetime.now(timezone.utc)))
+
+
 async def verify_device_signature(
     request: Request,
     current: CurrentUser,
@@ -66,17 +88,21 @@ async def verify_device_signature(
     if device is None or device.user_id != user.id:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "device not found")
     body = await request.body()
+    skew = get_settings().hmac_clock_skew_sec
     try:
-        hmac_verify.verify(
+        parsed = hmac_verify.verify(
             header=x_device_signature,
             secret=device.device_secret,
             method=request.method,
             path=request.url.path,
             body=body,
-            max_skew_sec=get_settings().hmac_clock_skew_sec,
+            max_skew_sec=skew,
         )
     except ValueError as e:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, f"HMAC: {e}") from e
+    # Replay protection: insert (device_id, mac_hex). Composite PK rejects duplicates.
+    _record_nonce(db, device.id, parsed.mac_hex, ttl_sec=skew * 2)
+    _gc_expired_nonces(db)
     return device
 
 

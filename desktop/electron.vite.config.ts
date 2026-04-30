@@ -3,6 +3,9 @@ import { defineConfig, externalizeDepsPlugin } from "electron-vite";
 import react from "@vitejs/plugin-react";
 
 const apiBase = process.env.FDM_API_BASE ?? "https://api.fourdm.services";
+// Used by electron-updater to authenticate against the private GitHub repo
+// at runtime. Bake it in only when CI provides one — local dev never has it.
+const ghToken = process.env.FDM_GH_TOKEN ?? "";
 
 export default defineConfig({
   main: {
@@ -11,7 +14,10 @@ export default defineConfig({
       rollupOptions: { input: { index: resolve(__dirname, "src/main/index.ts") } },
     },
     resolve: { alias: { "@shared": resolve(__dirname, "src/shared") } },
-    define: { __FDM_API_BASE__: JSON.stringify(apiBase) },
+    define: {
+      __FDM_API_BASE__: JSON.stringify(apiBase),
+      __FDM_GH_TOKEN__: JSON.stringify(ghToken),
+    },
   },
   preload: {
     plugins: [externalizeDepsPlugin()],

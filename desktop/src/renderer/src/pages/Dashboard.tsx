@@ -15,17 +15,28 @@ interface Props {
 
 export function Dashboard({ status }: Props) {
   const [busy, setBusy] = useState<"start" | "end" | "break" | "resume" | null>(null);
+  const [confirmEnd, setConfirmEnd] = useState(false);
 
   async function act(kind: "start" | "end" | "break" | "resume") {
+    if (kind === "end") {
+      setConfirmEnd(true);
+      return;
+    }
     setBusy(kind);
     try {
       if (kind === "start") await window.fdm.startWork();
-      else if (kind === "end") await window.fdm.endWork();
       else if (kind === "break") await window.fdm.startBreak();
       else await window.fdm.endBreak();
     } finally {
       setBusy(null);
     }
+  }
+
+  async function doEnd() {
+    setConfirmEnd(false);
+    setBusy("end");
+    try { await window.fdm.endWork(); }
+    finally { setBusy(null); }
   }
 
   const firstName = (status.profile?.name ?? "there").split(/\s+/)[0];
@@ -113,6 +124,17 @@ export function Dashboard({ status }: Props) {
           >
             {status.widget_visible ? "Hide widget" : "Show widget"}
           </Button>
+          {status.session_active && !status.on_break && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="self-center"
+              onClick={() => { void window.fdm.snoozeIdleNudge(15); }}
+              title="Stop the 'still working?' nudge for the next 15 minutes"
+            >
+              Snooze nudges 15m
+            </Button>
+          )}
         </div>
       </section>
 
@@ -165,6 +187,34 @@ export function Dashboard({ status }: Props) {
           <span className="ml-2 text-red-600" title={status.last_sync_error}>· sync error</span>
         )}
       </div>
+
+      {confirmEnd && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50"
+          onClick={() => setConfirmEnd(false)}
+          role="presentation"
+        >
+          <div
+            className="w-full max-w-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-xl overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-800">
+              <div className="text-base font-semibold">End your work day?</div>
+              <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                Closes the current session
+                {timerStart && <> ({hms(Math.round((Date.now() - new Date(timerStart).getTime()) / 1000))} so far)</>}.
+                You can start again later if you change your mind.
+              </div>
+            </div>
+            <div className="px-5 py-3 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/40 flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setConfirmEnd(false)}>Cancel</Button>
+              <Button variant="danger" onClick={doEnd} disabled={busy === "end"}>
+                {busy === "end" ? "Ending…" : "End work"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

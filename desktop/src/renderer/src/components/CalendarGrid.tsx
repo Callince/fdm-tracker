@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { addDays, format, isSameMonth, startOfMonth, startOfWeek } from "date-fns";
 import type { DailySummary } from "@shared/types";
 
@@ -33,6 +33,33 @@ function isWeekend(d: Date): boolean {
 }
 
 export function CalendarGrid({ month, days, onSelect, selected, holidays = [] }: Props) {
+  const gridRef = useRef<HTMLDivElement | null>(null);
+
+  // Keyboard nav: focus the selected cell when it changes; ←/→/↑/↓ move
+  // by 1/7 days, Enter/Space picks. Only fires when focus is inside the grid.
+  useEffect(() => {
+    const el = gridRef.current;
+    if (!el) return;
+    function onKey(e: KeyboardEvent) {
+      const base = selected ?? new Date();
+      let next: Date | null = null;
+      switch (e.key) {
+        case "ArrowLeft": next = addDays(base, -1); break;
+        case "ArrowRight": next = addDays(base, 1); break;
+        case "ArrowUp": next = addDays(base, -7); break;
+        case "ArrowDown": next = addDays(base, 7); break;
+        case "Home": next = startOfWeek(base, { weekStartsOn: 1 }); break;
+        case "End": next = addDays(startOfWeek(base, { weekStartsOn: 1 }), 6); break;
+      }
+      if (next) {
+        e.preventDefault();
+        onSelect(next);
+      }
+    }
+    el.addEventListener("keydown", onKey);
+    return () => el.removeEventListener("keydown", onKey);
+  }, [selected, onSelect]);
+
   const lookup = useMemo(() => {
     const m = new Map<string, DailySummary>();
     for (const d of days) m.set(d.date, d);
@@ -60,7 +87,7 @@ export function CalendarGrid({ month, days, onSelect, selected, holidays = [] }:
           <div key={d} className="px-2 py-1">{d}</div>
         ))}
       </div>
-      <div className="grid grid-cols-7 gap-1">
+      <div ref={gridRef} className="grid grid-cols-7 gap-1" role="grid">
         {cells.map((d) => {
           const iso = format(d, "yyyy-MM-dd");
           const s = lookup.get(iso);
@@ -87,7 +114,10 @@ export function CalendarGrid({ month, days, onSelect, selected, holidays = [] }:
               key={iso}
               onClick={() => onSelect(d)}
               title={holiday?.name}
-              className={`h-16 rounded border text-left p-2 transition ${
+              tabIndex={isSel ? 0 : -1}
+              role="gridcell"
+              aria-selected={isSel}
+              className={`h-16 rounded border text-left p-2 transition focus:outline-none focus:ring-2 focus:ring-brand/60 ${
                 isSel
                   ? "border-brand dark:border-brand"
                   : off

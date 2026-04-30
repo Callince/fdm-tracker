@@ -4,21 +4,25 @@ from __future__ import annotations
 import csv
 import io
 import uuid
-from datetime import date
+from datetime import date, datetime, timezone
 from typing import Annotated, Literal, Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy import and_, select
 from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..dependencies import CurrentUser
+from ..models.device import Device
+from ..models.holiday import Holiday
+from ..models.settings import Settings as OrgSettings
 from ..models.team import Team
 from ..routers.teams import ensure_team_exists
 from ..schemas.summary import DailySummaryListResponse, DayDetailResponse
 from ..security import hash_password, verify_password
+from ..services.audit import record as audit_record
 from ..services.summary import compute_daily_summaries, compute_day_detail
 
 router = APIRouter(prefix="/me", tags=["me"])
@@ -104,13 +108,30 @@ def me_update(
 @router.post("/password", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
 def me_change_password(
     body: MePasswordChange,
+    request: Request,
     current: CurrentUser,
     db: Annotated[Session, Depends(get_db)],
 ) -> Response:
-    user, _ = current
+    user, current_device_id = current
     if not verify_password(body.current_password, user.password_hash):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "current password is incorrect")
     user.password_hash = hash_password(body.new_password)
+    user.password_changed_at = datetime.now(timezone.utc)
+    # Kill outstanding refresh tokens on every device (the `password_changed_at`
+    # check in dependencies.get_current_user already invalidates access tokens).
+    db.execute(
+        Device.__table__.update()
+        .where(Device.user_id == user.id)
+        .values(refresh_token_jti=None)
+    )
+    audit_record(
+        db,
+        actor_id=user.id,
+        action="password.change",
+        target_type="user",
+        target_id=user.id,
+        request=request,
+    )
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -166,13 +187,9 @@ def me_range_totals(
 ) -> RangeTotals:
     """Total active/idle/break seconds between from..to inclusive.
 
-    `working_days` is the count of Mon–Fri days in the range minus any admin-
-    marked holidays falling on those weekdays. The desktop dashboard
-    multiplies this by `target_hours_per_day` to compute the target.
+    `working_days` is Mon–Fri days in the range, minus admin holidays falling
+    on weekdays, plus admin 'working' exceptions falling on weekends.
     """
-    from ..models.holiday import Holiday
-    from ..models.settings import Settings as OrgSettings
-
     user, _ = current
     _validate_range(from_date, to_date)
     days = compute_daily_summaries(db, user, from_date, to_date)
@@ -211,7 +228,10 @@ def me_range_totals(
     )
 
 
-@router.get("/export")
+@router.get(
+    "/export",
+    responses={200: {"description": "CSV", "content": {"text/csv": {}}}},
+)
 def me_export(
     current: CurrentUser,
     db: Annotated[Session, Depends(get_db)],

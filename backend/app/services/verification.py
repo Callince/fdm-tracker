@@ -10,13 +10,17 @@ import hmac
 import secrets
 from datetime import datetime, timedelta, timezone
 
+from fastapi import BackgroundTasks
 from sqlalchemy import and_, desc, select
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
+from ..logging_config import get_logger
 from ..models.email_verification import EmailVerification
 from ..models.user import User
 from . import email as email_svc
+
+_log = get_logger("verification")
 
 
 class VerificationError(Exception):
@@ -47,7 +51,24 @@ def _latest_pending(db: Session, user_id) -> EmailVerification | None:
     ).scalar_one_or_none()
 
 
-def issue_and_send(db: Session, user: User, *, enforce_cooldown: bool = True) -> EmailVerification:
+def _safe_send(to: str, code: str, ttl_min: int) -> None:
+    """Background-task wrapper that swallows email errors so a transient
+    Gmail/SMTP failure doesn't bubble out into the request lifecycle."""
+    try:
+        email_svc.send_verification_code(to, code, ttl_min)
+    except Exception:
+        _log.exception("verification email send failed", extra={"to": to})
+
+
+def issue_and_send(
+    db: Session,
+    user: User,
+    *,
+    enforce_cooldown: bool = True,
+    background: BackgroundTasks | None = None,
+) -> EmailVerification:
+    """Generate + persist a new code. The actual email is dispatched after
+    the request commits via `background` if provided, else synchronously."""
     s = get_settings()
     now = datetime.now(timezone.utc)
 
@@ -70,7 +91,10 @@ def issue_and_send(db: Session, user: User, *, enforce_cooldown: bool = True) ->
     db.add(row)
     db.flush()
 
-    email_svc.send_verification_code(user.email, code, s.verification_code_ttl_min)
+    if background is not None:
+        background.add_task(_safe_send, user.email, code, s.verification_code_ttl_min)
+    else:
+        _safe_send(user.email, code, s.verification_code_ttl_min)
     return row
 
 

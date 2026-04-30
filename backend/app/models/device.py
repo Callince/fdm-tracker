@@ -26,6 +26,10 @@ class Device(Base):
     platform: Mapped[str] = mapped_column(String(16), nullable=False)         # darwin|win32
     fingerprint: Mapped[str] = mapped_column(String(128), nullable=False)     # stable hash from client
     device_secret: Mapped[str] = mapped_column(String(128), nullable=False)   # HMAC key
+    # JTI of the most-recently-issued refresh token. We rotate on every
+    # /auth/refresh; if a stale jti is presented we treat it as compromise
+    # and clear this field, forcing a fresh login.
+    refresh_token_jti: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     last_seen_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
