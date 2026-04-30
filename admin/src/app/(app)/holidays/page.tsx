@@ -227,23 +227,24 @@ export default function HolidaysPage() {
         size="sm"
         footer={
           <>
-            <Button variant="outline" onClick={() => setEditing(null)}>Cancel</Button>
+            <Button variant="outline" type="button" onClick={() => setEditing(null)}>Cancel</Button>
             {editing?.existing && (
               <Button
                 variant="outline"
+                type="button"
                 onClick={() => editing.existing && setToDelete(editing.existing)}
               >
                 <Trash2 size={14} className="mr-1" /> Remove
               </Button>
             )}
-            <Button onClick={(e) => submit(e as unknown as FormEvent)} disabled={createM.isPending || deleteM.isPending}>
+            <Button type="submit" form="holiday-form" disabled={createM.isPending || deleteM.isPending}>
               {createM.isPending || deleteM.isPending ? "Saving…" : "Save"}
             </Button>
           </>
         }
       >
         {editing && (
-          <form onSubmit={submit} className="space-y-3">
+          <form id="holiday-form" onSubmit={submit} className="space-y-3">
             <div>
               <label className="text-xs text-slate-500 block mb-1">Type</label>
               <div className="grid grid-cols-2 gap-2">
@@ -284,8 +285,7 @@ export default function HolidaysPage() {
                 autoFocus
               />
             </div>
-            {err && <div className="text-sm text-red-600">{err}</div>}
-            <button type="submit" className="hidden" />
+            {err && <div className="text-sm text-red-600 dark:text-red-400">{err}</div>}
           </form>
         )}
       </Modal>

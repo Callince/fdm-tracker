@@ -24,6 +24,9 @@ const SIZE = {
   lg: "max-w-2xl",
 };
 
+const FOCUSABLE =
+  'input:not([type="hidden"]):not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], button:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
 export function Modal({
   open,
   onClose,
@@ -42,21 +45,56 @@ export function Modal({
 
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onCloseRef.current();
-    };
+    // Remember the trigger so we can restore focus on close.
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+
+    function focusables(): HTMLElement[] {
+      const root = ref.current;
+      if (!root) return [];
+      return Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
+        (el) => !el.hasAttribute("aria-hidden"),
+      );
+    }
+
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        onCloseRef.current();
+        return;
+      }
+      if (e.key !== "Tab") return;
+      const items = focusables();
+      if (items.length === 0) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      const active = document.activeElement as HTMLElement | null;
+      if (e.shiftKey && (active === first || !ref.current?.contains(active))) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+
     document.addEventListener("keydown", onKey);
-    // Focus the first input so users can type immediately. Prefer inputs
+    // Focus the first input so users can type immediately. Prefer text inputs
     // over buttons so focus doesn't land on the close (X) button.
     const t = setTimeout(() => {
-      const first = ref.current?.querySelector<HTMLElement>(
-        'input:not([type="hidden"]), select, textarea, [href], button, [tabindex]:not([tabindex="-1"])',
+      const root = ref.current;
+      if (!root) return;
+      const preferred = root.querySelector<HTMLElement>(
+        'input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]), textarea, select',
       );
-      first?.focus();
+      (preferred ?? focusables()[0])?.focus();
     }, 20);
+
     return () => {
       document.removeEventListener("keydown", onKey);
       clearTimeout(t);
+      // Restore focus to whatever opened the modal — important for keyboard users.
+      if (previouslyFocused && typeof previouslyFocused.focus === "function") {
+        previouslyFocused.focus();
+      }
     };
   }, [open]);
 

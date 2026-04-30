@@ -1,20 +1,17 @@
 "use client";
 
-import { useMemo } from "react";
+import { memo, useMemo } from "react";
 import { format, parseISO } from "date-fns";
 import {
   Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import type { DailySummary } from "@/lib/types";
 import { useIsDark } from "@/lib/useIsDark";
+import { CHART_COLORS, chartTheme } from "@/lib/chart-theme";
 
-export function UserActivityChart({ days }: { days: DailySummary[] }) {
+function UserActivityChartImpl({ days }: { days: DailySummary[] }) {
   const dark = useIsDark();
-  const grid = dark ? "#334155" : "#e2e8f0";
-  const axis = dark ? "#94a3b8" : "#64748b";
-  const tooltipBg = dark ? "#0f172a" : "#ffffff";
-  const tooltipBorder = dark ? "#334155" : "#e2e8f0";
-  const tooltipText = dark ? "#e2e8f0" : "#0f172a";
+  const t = chartTheme(dark);
 
   const data = useMemo(
     () =>
@@ -33,27 +30,29 @@ export function UserActivityChart({ days }: { days: DailySummary[] }) {
     <div className="h-64 w-full">
       <ResponsiveContainer>
         <BarChart data={data} margin={{ top: 8, right: 12, bottom: 0, left: 0 }}>
-          <CartesianGrid stroke={grid} strokeDasharray="3 3" vertical={false} />
-          <XAxis dataKey="label" stroke={axis} fontSize={12} tickLine={false} axisLine={false} />
-          <YAxis stroke={axis} fontSize={12} tickLine={false} axisLine={false} tickFormatter={(v) => `${v}h`} />
+          <CartesianGrid stroke={t.grid} strokeDasharray="3 3" vertical={false} />
+          <XAxis dataKey="label" stroke={t.axis} fontSize={12} tickLine={false} axisLine={false} />
+          <YAxis stroke={t.axis} fontSize={12} tickLine={false} axisLine={false} tickFormatter={(v) => `${v}h`} />
           <Tooltip
             formatter={(v: number) => `${v}h`}
             contentStyle={{
-              background: tooltipBg,
-              border: `1px solid ${tooltipBorder}`,
+              background: t.tooltipBg,
+              border: `1px solid ${t.tooltipBorder}`,
               borderRadius: 8,
               fontSize: 12,
-              color: tooltipText,
+              color: t.tooltipText,
             }}
-            labelStyle={{ color: tooltipText }}
-            itemStyle={{ color: tooltipText }}
+            labelStyle={{ color: t.tooltipText }}
+            itemStyle={{ color: t.tooltipText }}
           />
-          <Legend iconSize={10} wrapperStyle={{ fontSize: 12, color: axis }} />
-          <Bar dataKey="active" name="Active" stackId="1" fill="#10b981" />
-          <Bar dataKey="idle" name="Idle" stackId="1" fill="#f59e0b" />
-          <Bar dataKey="brk" name="Break" stackId="1" fill="#3b82f6" />
+          <Legend iconSize={10} wrapperStyle={{ fontSize: 12, color: t.axis }} />
+          <Bar dataKey="active" name="Active" stackId="1" fill={CHART_COLORS.active} />
+          <Bar dataKey="idle" name="Idle" stackId="1" fill={CHART_COLORS.idle} />
+          <Bar dataKey="brk" name="Break" stackId="1" fill={CHART_COLORS.brk} />
         </BarChart>
       </ResponsiveContainer>
     </div>
   );
 }
+
+export const UserActivityChart = memo(UserActivityChartImpl);

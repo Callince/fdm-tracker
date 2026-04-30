@@ -10,5 +10,9 @@ export default function Index() {
     const p = auth.getProfile();
     router.replace(p?.role === "admin" ? "/dashboard" : "/login");
   }, [router]);
-  return null;
+  return (
+    <div className="min-h-screen grid place-items-center bg-slate-50 dark:bg-slate-950 text-slate-500 dark:text-slate-400 text-sm">
+      Loading…
+    </div>
+  );
 }

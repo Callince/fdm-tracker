@@ -35,18 +35,20 @@ export function relativeFromNow(iso: string | null): string {
   return format(parseISO(iso), "PP");
 }
 
+const STATUS_COLOR: Record<string, string> = {
+  active: "bg-active",
+  idle: "bg-idle",
+  on_break: "bg-brk",
+};
+
+const STATUS_LABEL: Record<string, string> = {
+  on_break: "on break",
+};
+
 export function statusColor(status: string): string {
-  switch (status) {
-    case "active": return "bg-active";
-    case "idle": return "bg-idle";
-    case "on_break": return "bg-brk";
-    default: return "bg-offline";
-  }
+  return STATUS_COLOR[status] ?? "bg-offline";
 }
 
 export function statusLabel(status: string): string {
-  switch (status) {
-    case "on_break": return "on break";
-    default: return status;
-  }
+  return STATUS_LABEL[status] ?? status;
 }

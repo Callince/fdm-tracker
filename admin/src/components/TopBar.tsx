@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronDown, LogOut, Menu } from "lucide-react";
 import { api } from "@/lib/api";
@@ -17,6 +17,7 @@ export function TopBar({ onMobileMenu }: Props = {}) {
   const profile = auth.getProfile();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const menuId = useId();
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -60,6 +61,8 @@ export function TopBar({ onMobileMenu }: Props = {}) {
             className="inline-flex items-center gap-2 h-8 pl-1.5 pr-2 rounded-md text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
             aria-haspopup="menu"
             aria-expanded={menuOpen}
+            aria-controls={menuId}
+            aria-label={`Account menu for ${profile?.name ?? "current user"}`}
           >
             <span
               className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-brand text-white text-[11px] font-semibold"
@@ -72,6 +75,7 @@ export function TopBar({ onMobileMenu }: Props = {}) {
           </button>
           {menuOpen && (
             <div
+              id={menuId}
               role="menu"
               className="absolute right-0 mt-1 w-56 rounded-md border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-lg overflow-hidden"
             >

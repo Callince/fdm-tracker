@@ -26,7 +26,13 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     setMobileNavOpen(false);
   }, [path]);
 
-  if (!ready) return null;
+  if (!ready) {
+    return (
+      <div className="min-h-screen grid place-items-center bg-slate-50 dark:bg-slate-950 text-slate-500 dark:text-slate-400 text-sm">
+        Loading…
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen overflow-hidden bg-slate-50 dark:bg-slate-950">

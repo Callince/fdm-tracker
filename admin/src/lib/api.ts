@@ -25,6 +25,24 @@ export class ApiError extends Error {
   }
 }
 
+/** Extract a user-facing message from a FastAPI-style error payload.
+ * Handles `{detail: string}`, `{detail: [{msg: string}, …]}` (validation errors),
+ * raw strings, and falls back to `null`. */
+function extractErrorMessage(detail: unknown): string | null {
+  if (detail == null) return null;
+  if (typeof detail === "string") return detail;
+  if (typeof detail !== "object") return null;
+  const d = (detail as { detail?: unknown }).detail;
+  if (typeof d === "string") return d;
+  if (Array.isArray(d)) {
+    const first = d.find((x): x is { msg: string } =>
+      !!x && typeof x === "object" && typeof (x as { msg?: unknown }).msg === "string",
+    );
+    if (first) return first.msg;
+  }
+  return null;
+}
+
 async function refreshAccess(): Promise<string | null> {
   const refresh = auth.getRefresh();
   if (!refresh) return null;
@@ -66,11 +84,10 @@ async function request<T>(
     try {
       detail = await r.json();
     } catch {
-      detail = await r.text();
+      try { detail = await r.text(); } catch { detail = null; }
     }
-    const msg =
-      (detail as { detail?: string } | null)?.detail ?? `HTTP ${r.status}`;
-    throw new ApiError(r.status, typeof msg === "string" ? msg : JSON.stringify(msg), detail);
+    const msg = extractErrorMessage(detail) ?? `HTTP ${r.status}`;
+    throw new ApiError(r.status, msg, detail);
   }
 
   if (r.status === 204) return undefined as T;
