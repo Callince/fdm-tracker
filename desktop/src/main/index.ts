@@ -1,4 +1,4 @@
-import { app, BrowserWindow, globalShortcut, net } from "electron";
+import { app, BrowserWindow, globalShortcut, net, powerMonitor } from "electron";
 import { createMainWindow, showMainWindow } from "./windows";
 import { ensureTray } from "./tray";
 import { registerIpc, ipcOps } from "./ipc";
@@ -41,6 +41,19 @@ if (!gotLock) {
     }
 
     setInterval(() => ipcOps.setConnectionOnline(net.isOnline()), 5_000);
+
+    // Sleep / lock detection — close the current bucket so any time the
+    // user was away (laptop closed, screen locked, OS suspended) is
+    // written into activity_logs as idle instead of disappearing into
+    // a gap in the timeline.
+    const flush = () => { syncWorker.forceFlushBucket(); };
+    powerMonitor.on("suspend", flush);
+    powerMonitor.on("resume", flush);
+    powerMonitor.on("lock-screen", flush);
+    powerMonitor.on("unlock-screen", flush);
+    // app.on('before-quit') gives one last chance to write whatever's
+    // pending — this covers a clean shutdown started from inside the OS.
+    app.on("before-quit", flush);
 
     app.on("activate", () => {
       if (BrowserWindow.getAllWindows().length === 0) createMainWindow();

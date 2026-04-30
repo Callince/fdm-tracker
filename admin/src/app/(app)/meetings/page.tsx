@@ -4,7 +4,7 @@ import { useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format, parseISO } from "date-fns";
 import { formatInTimeZone } from "date-fns-tz";
-import { Plus, Trash2, ExternalLink } from "lucide-react";
+import { Plus, Pencil, Trash2, ExternalLink } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { extractUrl } from "@/lib/format";
 import { Button } from "@/components/ui/button";
@@ -20,6 +20,34 @@ import type { Meeting } from "@/lib/types";
 
 const TZ = Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Kolkata";
 
+const EMPTY_FORM = () => ({
+  title: "",
+  meeting_link: "",
+  scheduled_date: format(new Date(), "yyyy-MM-dd"),
+  scheduled_time: "10:00",
+  duration_minutes: 30,
+  user_ids: [] as string[],
+});
+
+/** Accept either a full http(s) URL or a recognizable meeting code and
+ * normalize to a URL. Returns null on empty input. */
+function normalizeMeetingLink(raw: string): string | null {
+  const s = raw.trim();
+  if (!s) return null;
+  // Already a URL — let the backend strip surrounding text if any.
+  if (/https?:\/\//i.test(s)) return s;
+  // Google Meet code: abc-defg-hij  (letters only, three dash-separated groups).
+  if (/^[a-z]{3}-[a-z]{4}-[a-z]{3}$/i.test(s)) {
+    return `https://meet.google.com/${s.toLowerCase()}`;
+  }
+  // Zoom: 9–11 digit meeting ID.
+  if (/^\d{9,11}$/.test(s.replace(/[\s-]/g, ""))) {
+    return `https://zoom.us/j/${s.replace(/[\s-]/g, "")}`;
+  }
+  // Otherwise hand it to the backend — it'll either accept it or reject.
+  return s;
+}
+
 export default function MeetingsPage() {
   const qc = useQueryClient();
   const meetingsQ = useQuery({
@@ -27,28 +55,55 @@ export default function MeetingsPage() {
     queryFn: () => api.listMeetings(),
   });
 
-  const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({
-    title: "",
-    meeting_link: "",
-    scheduled_date: format(new Date(), "yyyy-MM-dd"),
-    scheduled_time: "10:00",
-    duration_minutes: 30,
-    user_ids: [] as string[],
-  });
+  // null editing = create mode; otherwise pre-fill for edit
+  const [editing, setEditing] = useState<Meeting | null | undefined>(undefined);
+  const [form, setForm] = useState(EMPTY_FORM());
   const [err, setErr] = useState<string | null>(null);
   const [toDelete, setToDelete] = useState<Meeting | null>(null);
+
+  const open = editing !== undefined;
+
+  function closeModal() {
+    setEditing(undefined);
+    setForm(EMPTY_FORM());
+    setErr(null);
+  }
+
+  function openCreate() {
+    setForm(EMPTY_FORM());
+    setEditing(null);
+    setErr(null);
+  }
+
+  function openEdit(m: Meeting) {
+    const local = parseISO(m.scheduled_at);
+    setForm({
+      title: m.title,
+      meeting_link: m.meeting_link ?? "",
+      scheduled_date: formatInTimeZone(local, TZ, "yyyy-MM-dd"),
+      scheduled_time: formatInTimeZone(local, TZ, "HH:mm"),
+      duration_minutes: m.duration_minutes,
+      user_ids: m.attendees.map((a) => a.id),
+    });
+    setEditing(m);
+    setErr(null);
+  }
 
   const createM = useMutation({
     mutationFn: api.createMeeting,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin", "meetings"] });
-      setOpen(false);
-      setForm({
-        title: "", meeting_link: "",
-        scheduled_date: format(new Date(), "yyyy-MM-dd"),
-        scheduled_time: "10:00", duration_minutes: 30, user_ids: [],
-      });
+      closeModal();
+    },
+    onError: (e) => setErr(e instanceof ApiError ? e.message : "Failed"),
+  });
+
+  const updateM = useMutation({
+    mutationFn: (body: { id: string; data: Parameters<typeof api.updateMeeting>[1] }) =>
+      api.updateMeeting(body.id, body.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin", "meetings"] });
+      closeModal();
     },
     onError: (e) => setErr(e instanceof ApiError ? e.message : "Failed"),
   });
@@ -68,27 +123,31 @@ export default function MeetingsPage() {
       setErr("Title required");
       return;
     }
-    // Combine local date+time and let JS produce ISO with offset; backend stores UTC.
     const local = new Date(`${form.scheduled_date}T${form.scheduled_time}:00`);
     if (isNaN(local.getTime())) {
       setErr("Invalid date/time");
       return;
     }
-    // Keep a 1-min slack so the user can submit at the exact minute they chose.
     if (local.getTime() < Date.now() - 60_000) {
       setErr("Pick the current time or a later one — past meetings can't be scheduled.");
       return;
     }
-    createM.mutate({
+    const payload = {
       title: form.title.trim(),
-      meeting_link: form.meeting_link.trim() || null,
+      meeting_link: normalizeMeetingLink(form.meeting_link),
       scheduled_at: local.toISOString(),
       duration_minutes: form.duration_minutes,
       user_ids: form.user_ids,
-    });
+    };
+    if (editing) {
+      updateM.mutate({ id: editing.id, data: payload });
+    } else {
+      createM.mutate(payload);
+    }
   }
 
   const meetings = meetingsQ.data?.meetings ?? [];
+  const busy = createM.isPending || updateM.isPending;
 
   return (
     <div className="space-y-6 max-w-5xl">
@@ -97,7 +156,7 @@ export default function MeetingsPage() {
         title="Meetings"
         subtitle="Schedule meetings and the desktop app will notify the right people."
         right={
-          <Button onClick={() => setOpen(true)}>
+          <Button onClick={openCreate}>
             <Plus size={14} className="mr-1" /> New meeting
           </Button>
         }
@@ -105,7 +164,7 @@ export default function MeetingsPage() {
 
       <Card>
         <CardBody className="p-0">
-          {meetingsQ.isLoading && <TableSkeleton cols={5} rows={4} />}
+          {meetingsQ.isLoading && <TableSkeleton cols={6} rows={4} />}
           {!meetingsQ.isLoading && meetings.length === 0 && (
             <EmptyState
               title="No meetings scheduled"
@@ -171,13 +230,24 @@ export default function MeetingsPage() {
                         })()}
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <button
-                          onClick={() => setToDelete(m)}
-                          className="p-1 rounded hover:bg-red-50 dark:hover:bg-red-900/30 text-red-600 dark:text-red-400"
-                          title="Delete"
-                        >
-                          <Trash2 size={14} />
-                        </button>
+                        <div className="inline-flex gap-1">
+                          <button
+                            onClick={() => openEdit(m)}
+                            className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400"
+                            title="Edit"
+                            aria-label="Edit meeting"
+                          >
+                            <Pencil size={14} />
+                          </button>
+                          <button
+                            onClick={() => setToDelete(m)}
+                            className="p-1 rounded hover:bg-red-50 dark:hover:bg-red-900/30 text-red-600 dark:text-red-400"
+                            title="Delete"
+                            aria-label="Delete meeting"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -188,18 +258,18 @@ export default function MeetingsPage() {
         </CardBody>
       </Card>
 
-      {/* Create modal */}
+      {/* Create / edit modal */}
       <Modal
         open={open}
-        onClose={() => setOpen(false)}
-        title="Schedule a meeting"
+        onClose={closeModal}
+        title={editing ? "Edit meeting" : "Schedule a meeting"}
         subtitle={`Time is interpreted in your browser's timezone (${TZ}).`}
         size="lg"
         footer={
           <>
-            <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button onClick={(e) => submit(e as unknown as FormEvent)} disabled={createM.isPending}>
-              {createM.isPending ? "Scheduling…" : "Schedule"}
+            <Button variant="outline" onClick={closeModal}>Cancel</Button>
+            <Button onClick={(e) => submit(e as unknown as FormEvent)} disabled={busy}>
+              {busy ? "Saving…" : editing ? "Save changes" : "Schedule"}
             </Button>
           </>
         }
@@ -213,7 +283,7 @@ export default function MeetingsPage() {
               <Input
                 type="date"
                 value={form.scheduled_date}
-                min={format(new Date(), "yyyy-MM-dd")}
+                min={editing ? undefined : format(new Date(), "yyyy-MM-dd")}
                 onChange={(e) => setForm({ ...form, scheduled_date: e.target.value })}
                 required
               />
@@ -224,7 +294,7 @@ export default function MeetingsPage() {
                 type="time"
                 value={form.scheduled_time}
                 min={
-                  form.scheduled_date === format(new Date(), "yyyy-MM-dd")
+                  !editing && form.scheduled_date === format(new Date(), "yyyy-MM-dd")
                     ? format(new Date(), "HH:mm")
                     : undefined
                 }
@@ -238,8 +308,29 @@ export default function MeetingsPage() {
             <Input type="number" min={1} max={1440} value={form.duration_minutes}
                    onChange={(e) => setForm({ ...form, duration_minutes: Number(e.target.value) })} />
           </div>
-          <Input placeholder="Meeting link (optional — Meet, Zoom, …)" value={form.meeting_link}
-                 onChange={(e) => setForm({ ...form, meeting_link: e.target.value })} />
+          <div>
+            <label className="text-xs text-slate-500 block mb-1">Meeting link or code</label>
+            <Input
+              placeholder="https://meet.google.com/abc-defg-hij  OR  abc-defg-hij"
+              value={form.meeting_link}
+              onChange={(e) => setForm({ ...form, meeting_link: e.target.value })}
+            />
+            <div className="mt-1 text-[11px] text-slate-400">
+              Paste a full URL (Meet, Zoom, …) or just a Google Meet code (e.g. <code className="font-mono">abc-defg-hij</code>)
+              or a Zoom meeting ID — we'll build the URL for you.
+            </div>
+            {form.meeting_link && (() => {
+              const norm = normalizeMeetingLink(form.meeting_link);
+              if (norm && norm !== form.meeting_link.trim()) {
+                return (
+                  <div className="mt-1 text-[11px] text-emerald-600 dark:text-emerald-400 truncate">
+                    → will save as <span className="font-mono">{norm}</span>
+                  </div>
+                );
+              }
+              return null;
+            })()}
+          </div>
           <div>
             <div className="flex items-baseline justify-between mb-1">
               <label className="text-xs text-slate-500 dark:text-slate-400">Audience</label>
