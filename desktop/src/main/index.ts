@@ -10,6 +10,12 @@ import { startAutoUpdater } from "./autoUpdate";
 
 installGlobalErrorHandlers();
 
+// Windows requires an AppUserModelId for native toast notifications to
+// fire. Without it, new Notification(...) silently no-ops on Win10/11.
+if (process.platform === "win32") {
+  app.setAppUserModelId("com.fourdm.tracker");
+}
+
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();
