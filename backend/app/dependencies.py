@@ -102,7 +102,11 @@ async def verify_device_signature(
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, f"HMAC: {e}") from e
     # Replay protection: insert (device_id, mac_hex). Composite PK rejects duplicates.
     _record_nonce(db, device.id, parsed.mac_hex, ttl_sec=skew * 2)
-    _gc_expired_nonces(db)
+    # NOTE: do NOT run _gc_expired_nonces here. It used to be called on every
+    # request — fine when the table was empty, catastrophic once it accumulated
+    # tens of thousands of rows (full-table DELETE in the request path made
+    # every signed POST take minutes). The garbage collection now runs in a
+    # periodic background task; see app.main:_nonce_gc_loop.
     return device
 
 
