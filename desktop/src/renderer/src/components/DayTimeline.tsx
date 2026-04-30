@@ -71,6 +71,10 @@ function collapseBuckets(detail: DayDetail): Range[] {
   }
 
   // Coalesce contiguous same-kind buckets into ranges.
+  // Allow up to 90s gap between consecutive buckets — bucket close + open
+  // around a break, sleep, or sync hiccup commonly produces 5-30s gaps that
+  // shouldn't visually fragment a continuous run.
+  const COALESCE_GAP_MS = 90_000;
   const coalesced: Range[] = [];
   const sorted = [...detail.buckets].sort((a, b) => a.bucket_start.localeCompare(b.bucket_start));
   for (const b of sorted) {
@@ -78,7 +82,12 @@ function collapseBuckets(detail: DayDetail): Range[] {
     const end = new Date(start.getTime() + 60_000);
     const kind: RangeKind = b.active_seconds >= b.idle_seconds ? "active" : "idle";
     const last = coalesced.at(-1);
-    if (last && last.kind === kind && Math.abs(last.end.getTime() - start.getTime()) <= 1500) {
+    const gap = last ? start.getTime() - last.end.getTime() : Infinity;
+    if (last && last.kind === kind && gap >= 0 && gap <= COALESCE_GAP_MS) {
+      // Snap last.end forward to absorb the small gap so the range is
+      // contiguous. We trust the bucket data: 'no buckets' here means the
+      // user wasn't far away (otherwise sleep-fill would have written idle
+      // buckets).
       last.end = end;
     } else {
       coalesced.push({ start, end, kind });
@@ -92,7 +101,23 @@ function collapseBuckets(detail: DayDetail): Range[] {
     out.push(...carveBreaks(r, breaks));
   }
   out.push(...breaks);
-  return out.sort((a, b) => a.start.getTime() - b.start.getTime());
+  out.sort((a, b) => a.start.getTime() - b.start.getTime());
+
+  // Final dedupe: if any range overlaps the previous one (can happen when a
+  // sleep-fill synthetic bucket runs into a real bucket), truncate the
+  // later one's start so the timeline is strictly non-overlapping.
+  for (let i = 1; i < out.length; i++) {
+    const prev = out[i - 1];
+    const cur = out[i];
+    if (cur.start < prev.end) {
+      cur.start = new Date(prev.end);
+      if (cur.start >= cur.end) {
+        out.splice(i, 1);
+        i--;
+      }
+    }
+  }
+  return out;
 }
 
 function generateTicks(min: Date, max: Date): Date[] {
