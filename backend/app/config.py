@@ -76,6 +76,9 @@ class Settings(BaseSettings):
     default_workday_start_hour: int = 4
     default_timezone: str = "Asia/Kolkata"
 
+    # Sentry (optional; empty = disabled)
+    sentry_dsn: str = ""
+
     @field_validator("jwt_secret")
     @classmethod
     def _jwt_secret_not_default(cls, v: str) -> str:

@@ -29,6 +29,9 @@ jobs:
       FDM_API_BASE: https://api.fourdm.services
       # Baked into the bundle for electron-updater (private GitHub repo).
       FDM_GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # Sentry DSN is safe to expose; baked at build time so installed
+      # clients report errors. Set FDM_SENTRY_DSN as a repo secret.
+      FDM_SENTRY_DSN: ${{ secrets.FDM_SENTRY_DSN }}
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
       # Used by electron-builder to upload artifacts + latest.yml to the
       # Release matching this tag. GITHUB_TOKEN works for the same repo.

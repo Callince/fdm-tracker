@@ -6,6 +6,8 @@ const apiBase = process.env.FDM_API_BASE ?? "https://api.fourdm.services";
 // Used by electron-updater to authenticate against the private GitHub repo
 // at runtime. Bake it in only when CI provides one — local dev never has it.
 const ghToken = process.env.FDM_GH_TOKEN ?? "";
+// Sentry DSN — empty string disables Sentry (local dev).
+const sentryDsn = process.env.FDM_SENTRY_DSN ?? "";
 
 export default defineConfig({
   main: {
@@ -17,6 +19,7 @@ export default defineConfig({
     define: {
       __FDM_API_BASE__: JSON.stringify(apiBase),
       __FDM_GH_TOKEN__: JSON.stringify(ghToken),
+      __FDM_SENTRY_DSN__: JSON.stringify(sentryDsn),
     },
   },
   preload: {
@@ -37,6 +40,9 @@ export default defineConfig({
         "@": resolve(__dirname, "src/renderer/src"),
         "@shared": resolve(__dirname, "src/shared"),
       },
+    },
+    define: {
+      __FDM_SENTRY_DSN__: JSON.stringify(sentryDsn),
     },
   },
 });
