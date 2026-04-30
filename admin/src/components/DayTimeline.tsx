@@ -32,26 +32,62 @@ function humanDuration(secs: number): string {
 }
 
 function collapseBuckets(detail: DayDetail): Range[] {
-  // Each bucket = 60s. Classify by dominant (active_seconds >= idle_seconds → active).
-  const out: Range[] = [];
+  // Each bucket = 60s. Classify by dominant kind, then coalesce consecutive
+  // same-kind buckets. Allow up to a 90s gap so small sync hiccups around
+  // breaks/sleep don't fragment a continuous run.
+  const COALESCE_GAP_MS = 90_000;
+  const breaks: Range[] = [];
+  for (const b of detail.breaks) {
+    if (!b.ended_at) continue;
+    breaks.push({ start: parseISO(b.started_at), end: parseISO(b.ended_at), kind: "break" });
+  }
+
+  const coalesced: Range[] = [];
   const sorted = [...detail.buckets].sort((a, b) => a.bucket_start.localeCompare(b.bucket_start));
   for (const b of sorted) {
     const start = parseISO(b.bucket_start);
     const end = new Date(start.getTime() + 60_000);
     const kind: RangeKind = b.active_seconds >= b.idle_seconds ? "active" : "idle";
-    const last = out.at(-1);
-    // Merge contiguous same-kind buckets (allow a 1s gap for bucket edges).
-    if (last && last.kind === kind && Math.abs(last.end.getTime() - start.getTime()) <= 1500) {
+    const last = coalesced.at(-1);
+    const gap = last ? start.getTime() - last.end.getTime() : Infinity;
+    if (last && last.kind === kind && gap >= 0 && gap <= COALESCE_GAP_MS) {
       last.end = end;
     } else {
-      out.push({ start, end, kind });
+      coalesced.push({ start, end, kind });
     }
   }
-  for (const b of detail.breaks) {
-    if (!b.ended_at) continue;
-    out.push({ start: parseISO(b.started_at), end: parseISO(b.ended_at), kind: "break" });
+
+  // Carve break windows out of any active/idle range that overlaps them.
+  function carve(r: Range): Range[] {
+    let pieces: Range[] = [{ ...r }];
+    for (const b of breaks) {
+      const next: Range[] = [];
+      for (const p of pieces) {
+        if (b.end <= p.start || b.start >= p.end) { next.push(p); continue; }
+        if (b.start > p.start) next.push({ start: p.start, end: b.start, kind: p.kind });
+        if (b.end < p.end) next.push({ start: b.end, end: p.end, kind: p.kind });
+      }
+      pieces = next;
+    }
+    return pieces;
   }
-  return out.sort((a, b) => a.start.getTime() - b.start.getTime());
+  const out: Range[] = [];
+  for (const r of coalesced) out.push(...carve(r));
+  out.push(...breaks);
+  out.sort((a, b) => a.start.getTime() - b.start.getTime());
+
+  // Strictly non-overlapping: truncate any range that starts before the
+  // previous one ends (sleep-fill synthetic buckets occasionally collide
+  // with real buckets at the seam).
+  for (let i = 1; i < out.length; i++) {
+    const prev = out[i - 1];
+    const cur = out[i];
+    if (cur.start < prev.end) {
+      cur.start = new Date(prev.end);
+      if (cur.start >= cur.end) { out.splice(i, 1); i--; }
+    }
+  }
+  return out;
 }
 
 function generateTicks(min: Date, max: Date): Date[] {
