@@ -1,7 +1,19 @@
 /**
  * Persistent auth + device state using electron-store.
- * On disk: %APPDATA%/fdm-tracker/config.json (Windows) or ~/Library/Application Support/...
+ *
+ * Sensitive fields (accessToken, refreshToken, deviceSecret) are encrypted
+ * via Electron's safeStorage — backed by:
+ *   - macOS Keychain
+ *   - Windows DPAPI
+ *   - libsecret on Linux (best-effort)
+ *
+ * On first read of a profile that was written by an older version (plaintext),
+ * the values are migrated transparently and re-saved encrypted.
+ *
+ * On disk: %APPDATA%/FDM Tracker/config.json (Windows) or
+ *          ~/Library/Application Support/FDM Tracker/... (macOS).
  */
+import { safeStorage } from "electron";
 import Store from "electron-store";
 
 interface AuthState {
@@ -23,6 +35,15 @@ interface AuthState {
   } | null;
 }
 
+interface RawAuthState {
+  accessToken: string | null;
+  refreshToken: string | null;
+  deviceId: string | null;
+  deviceSecret: string | null;
+  profile: AuthState["profile"];
+  encVersion?: number;
+}
+
 interface AppPrefs {
   privacyAcknowledged: boolean;
   autoStart: boolean;
@@ -32,12 +53,42 @@ interface AppPrefs {
   autoBreakOnIdle: boolean;
   meetingNotificationsEnabled: boolean;
   meetingAlarmEnabled: boolean;
-  meetingReminderMinutes: number;     // notify N minutes before meeting
+  meetingReminderMinutes: number;
 }
 
-const authStore = new Store<AuthState>({
+const ENC_VERSION = 1;
+const ENC_PREFIX = "enc:v1:";
+
+/** Encrypt a value using safeStorage. Returns plaintext if encryption is
+ * unavailable (Linux without libsecret, etc.) so the app keeps working. */
+function encrypt(plain: string | null): string | null {
+  if (plain == null) return null;
+  if (!safeStorage.isEncryptionAvailable()) return plain;
+  const buf = safeStorage.encryptString(plain);
+  return ENC_PREFIX + buf.toString("base64");
+}
+
+function decrypt(stored: string | null): string | null {
+  if (stored == null) return null;
+  if (!stored.startsWith(ENC_PREFIX)) return stored;   // legacy plaintext
+  if (!safeStorage.isEncryptionAvailable()) return null;
+  try {
+    const buf = Buffer.from(stored.slice(ENC_PREFIX.length), "base64");
+    return safeStorage.decryptString(buf);
+  } catch {
+    return null;
+  }
+}
+
+const authStore = new Store<RawAuthState>({
   name: "auth",
-  defaults: { accessToken: null, refreshToken: null, deviceId: null, deviceSecret: null, profile: null },
+  defaults: {
+    accessToken: null,
+    refreshToken: null,
+    deviceId: null,
+    deviceSecret: null,
+    profile: null,
+  },
 });
 
 const prefsStore = new Store<AppPrefs>({
@@ -55,27 +106,67 @@ const prefsStore = new Store<AppPrefs>({
   },
 });
 
+function readAndMigrate(): AuthState {
+  const stored: RawAuthState = {
+    accessToken: authStore.get("accessToken"),
+    refreshToken: authStore.get("refreshToken"),
+    deviceId: authStore.get("deviceId"),
+    deviceSecret: authStore.get("deviceSecret"),
+    profile: authStore.get("profile"),
+    encVersion: authStore.get("encVersion"),
+  };
+  const accessToken = decrypt(stored.accessToken);
+  const refreshToken = decrypt(stored.refreshToken);
+  const deviceSecret = decrypt(stored.deviceSecret);
+
+  // Migrate plaintext values to encrypted on first read after upgrade.
+  const needsMigration =
+    stored.encVersion !== ENC_VERSION &&
+    safeStorage.isEncryptionAvailable() &&
+    (
+      (stored.accessToken && !stored.accessToken.startsWith(ENC_PREFIX)) ||
+      (stored.refreshToken && !stored.refreshToken.startsWith(ENC_PREFIX)) ||
+      (stored.deviceSecret && !stored.deviceSecret.startsWith(ENC_PREFIX))
+    );
+  if (needsMigration) {
+    authStore.set({
+      accessToken: encrypt(accessToken),
+      refreshToken: encrypt(refreshToken),
+      deviceId: stored.deviceId,
+      deviceSecret: encrypt(deviceSecret),
+      profile: stored.profile,
+      encVersion: ENC_VERSION,
+    });
+  }
+
+  const profile = stored.profile;
+  if (profile && typeof profile.target_hours_per_day !== "number") {
+    profile.target_hours_per_day = 8;
+  }
+  return {
+    accessToken,
+    refreshToken,
+    deviceId: stored.deviceId,
+    deviceSecret,
+    profile,
+  };
+}
+
 export const auth = {
-  get: (): AuthState => {
-    const profile = authStore.get("profile");
-    // Default-fill target_hours_per_day for profiles persisted before the
-    // field existed; it'll be overwritten on the next login/refresh.
-    if (profile && typeof profile.target_hours_per_day !== "number") {
-      profile.target_hours_per_day = 8;
-    }
-    return {
-      accessToken: authStore.get("accessToken"),
-      refreshToken: authStore.get("refreshToken"),
-      deviceId: authStore.get("deviceId"),
-      deviceSecret: authStore.get("deviceSecret"),
-      profile,
-    };
-  },
+  get: (): AuthState => readAndMigrate(),
   save(state: AuthState) {
-    authStore.set(state);
+    authStore.set({
+      accessToken: encrypt(state.accessToken),
+      refreshToken: encrypt(state.refreshToken),
+      deviceId: state.deviceId,
+      deviceSecret: encrypt(state.deviceSecret),
+      profile: state.profile,
+      encVersion: ENC_VERSION,
+    });
   },
   setAccess(token: string) {
-    authStore.set("accessToken", token);
+    authStore.set("accessToken", encrypt(token));
+    authStore.set("encVersion", ENC_VERSION);
   },
   setProfile(p: AuthState["profile"]) {
     authStore.set("profile", p);

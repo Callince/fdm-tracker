@@ -1,17 +1,37 @@
-import { app, BrowserWindow, globalShortcut, net, powerMonitor } from "electron";
+import { app, BrowserWindow, Menu, dialog, globalShortcut, net, powerMonitor } from "electron";
 import { createMainWindow, showMainWindow } from "./windows";
 import { ensureTray } from "./tray";
 import { registerIpc, ipcOps } from "./ipc";
 import { syncWorker } from "./syncWorker";
 import { auth } from "./auth";
+import { installGlobalErrorHandlers, log } from "./logger";
+import { buildAppMenu } from "./menu";
+
+installGlobalErrorHandlers();
 
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();
 } else {
-  app.on("second-instance", () => showMainWindow());
+  app.on("second-instance", () => {
+    // User launched a second copy from the Start menu / Dock — bring the
+    // existing window forward instead of opening another.
+    showMainWindow();
+  });
 
   app.whenReady().then(() => {
+    Menu.setApplicationMenu(buildAppMenu({
+      onAbout: () => {
+        const detail = `Version ${app.getVersion()}\nLog file: ${log.path()}`;
+        dialog.showMessageBox({
+          type: "info",
+          title: "FDM Tracker",
+          message: "FDM Tracker",
+          detail,
+          buttons: ["OK"],
+        });
+      },
+    }));
     registerIpc();
     createMainWindow();
     ensureTray({

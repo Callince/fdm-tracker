@@ -1,5 +1,12 @@
 import { BrowserWindow, screen } from "electron";
 import { join } from "node:path";
+import Store from "electron-store";
+
+interface WidgetState { x?: number; y?: number; }
+const widgetStore = new Store<{ pos: WidgetState }>({
+  name: "widget-state",
+  defaults: { pos: {} },
+});
 
 /**
  * Small always-on-top floating widget. Shows the live timer and a few action
@@ -42,7 +49,10 @@ export function getWidgetWindow(): BrowserWindow | null {
 export function createWidget(): BrowserWindow {
   if (widgetWin && !widgetWin.isDestroyed()) return widgetWin;
 
-  const pos = defaultPosition();
+  const saved = widgetStore.get("pos");
+  const pos = (typeof saved.x === "number" && typeof saved.y === "number")
+    ? { x: saved.x, y: saved.y }
+    : defaultPosition();
   widgetWin = new BrowserWindow({
     width: WIDGET_WIDTH,
     height: WIDGET_HEIGHT_NORMAL,
@@ -72,6 +82,16 @@ export function createWidget(): BrowserWindow {
   } else {
     widgetWin.loadFile(join(__dirname, "../renderer/index.html"), { hash: "widget" });
   }
+
+  let saveTimer: NodeJS.Timeout | null = null;
+  widgetWin.on("move", () => {
+    if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      if (!widgetWin || widgetWin.isDestroyed()) return;
+      const [x, y] = widgetWin.getPosition();
+      widgetStore.set("pos", { x, y });
+    }, 400);
+  });
 
   widgetWin.on("closed", () => {
     widgetWin = null;

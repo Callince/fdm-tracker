@@ -6,15 +6,42 @@
 import Database from "better-sqlite3";
 import { app } from "electron";
 import { randomUUID } from "node:crypto";
+import fs from "node:fs";
 import path from "node:path";
 
 let db: Database.Database | null = null;
 
+function tryIntegrity(d: Database.Database): boolean {
+  try {
+    const row = d.prepare("PRAGMA integrity_check").get() as { integrity_check?: string } | undefined;
+    return row?.integrity_check === "ok";
+  } catch {
+    return false;
+  }
+}
+
 function open(): Database.Database {
   if (db) return db;
   const dbPath = path.join(app.getPath("userData"), "buffer.sqlite");
-  db = new Database(dbPath);
-  db.pragma("journal_mode = WAL");
+  try {
+    db = new Database(dbPath);
+    db.pragma("journal_mode = WAL");
+    if (!tryIntegrity(db)) {
+      throw new Error("integrity_check failed");
+    }
+  } catch (e) {
+    // DB is corrupt or unreadable. Quarantine it and start fresh — losing
+    // unsynced buckets is far better than the app refusing to launch.
+    try { db?.close(); } catch { /* ignore */ }
+    db = null;
+    try {
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+      fs.renameSync(dbPath, `${dbPath}.corrupt-${stamp}`);
+    } catch { /* ignore */ }
+    db = new Database(dbPath);
+    db.pragma("journal_mode = WAL");
+    console.warn("[localDb] reset due to:", (e as Error).message);
+  }
   db.exec(`
     CREATE TABLE IF NOT EXISTS activity_buckets (
       client_event_id TEXT PRIMARY KEY,
