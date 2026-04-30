@@ -33,7 +33,7 @@ const api = {
   listMyMeetings: () =>
     ipcRenderer.invoke(IpcChannels.listMyMeetings) as Promise<{
       ok: boolean;
-      data?: { meetings: Array<{ id: string; title: string; meeting_link: string | null; scheduled_at: string; duration_minutes: number; attendees: { id: string; name: string; email: string }[] }> };
+      data?: { meetings: Array<{ id: string; title: string; meeting_link: string | null; meeting_password: string | null; scheduled_at: string; duration_minutes: number; attendees: { id: string; name: string; email: string }[] }> };
       error?: string;
     }>,
   openExternal: (url: string): Promise<void> =>

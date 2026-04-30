@@ -28,6 +28,7 @@ export interface Meeting {
   id: string;
   title: string;
   meeting_link: string | null;
+  meeting_password: string | null;
   scheduled_at: string;
   duration_minutes: number;
   attendees: AttendeeBrief[];
@@ -37,6 +38,7 @@ export interface Meeting {
 export interface MeetingInput {
   title: string;
   meeting_link?: string | null;
+  meeting_password?: string | null;
   scheduled_at: string;
   duration_minutes: number;
   user_ids: string[];   // empty = broadcast to all

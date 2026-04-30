@@ -30,6 +30,7 @@ class Meeting(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     meeting_link: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
+    meeting_password: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     scheduled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
     duration_minutes: Mapped[int] = mapped_column(Integer, nullable=False, server_default="30")
     created_by: Mapped[uuid.UUID] = mapped_column(

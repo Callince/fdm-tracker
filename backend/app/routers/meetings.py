@@ -34,6 +34,7 @@ def _to_out(m: Meeting) -> MeetingOut:
         id=m.id,
         title=m.title,
         meeting_link=m.meeting_link,
+        meeting_password=m.meeting_password,
         scheduled_at=m.scheduled_at,
         duration_minutes=m.duration_minutes,
         attendees=[AttendeeBrief(id=u.id, name=u.name, email=u.email) for u in m.attendees],
@@ -115,6 +116,7 @@ def admin_create_meeting(
     m = Meeting(
         title=body.title.strip(),
         meeting_link=(body.meeting_link or None),
+        meeting_password=(body.meeting_password.strip() if body.meeting_password else None),
         scheduled_at=body.scheduled_at,
         duration_minutes=body.duration_minutes,
         created_by=admin.id,
@@ -140,6 +142,8 @@ def admin_update_meeting(
         m.title = body.title.strip()
     if body.meeting_link is not None:
         m.meeting_link = body.meeting_link or None
+    if body.meeting_password is not None:
+        m.meeting_password = body.meeting_password.strip() or None
     if body.scheduled_at is not None:
         m.scheduled_at = body.scheduled_at
     if body.duration_minutes is not None:

@@ -46,6 +46,7 @@ def _normalize_link(v: Optional[str]) -> Optional[str]:
 class MeetingCreate(BaseModel):
     title: str = Field(min_length=1, max_length=255)
     meeting_link: Optional[str] = Field(default=None, max_length=1024)
+    meeting_password: Optional[str] = Field(default=None, max_length=128)
     scheduled_at: datetime
     duration_minutes: int = Field(default=30, ge=1, le=1440)
     user_ids: List[uuid.UUID] = Field(
@@ -60,6 +61,7 @@ class MeetingCreate(BaseModel):
 class MeetingUpdate(BaseModel):
     title: Optional[str] = Field(default=None, min_length=1, max_length=255)
     meeting_link: Optional[str] = Field(default=None, max_length=1024)
+    meeting_password: Optional[str] = Field(default=None, max_length=128)
     scheduled_at: Optional[datetime] = None
     duration_minutes: Optional[int] = Field(default=None, ge=1, le=1440)
     user_ids: Optional[List[uuid.UUID]] = None
@@ -83,6 +85,7 @@ class MeetingOut(BaseModel):
     id: uuid.UUID
     title: str
     meeting_link: Optional[str]
+    meeting_password: Optional[str]
     scheduled_at: datetime
     duration_minutes: int
     attendees: List[AttendeeBrief]
