@@ -1,6 +1,6 @@
 {
   "name": "fdm-tracker-desktop",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "FDM Tracker — employee-facing desktop client",
   "author": "Fourth Dimension Media Solutions",
   "private": true,
@@ -21,6 +21,7 @@
     "date-fns": "^3.6.0",
     "date-fns-tz": "^3.2.0",
     "electron-store": "^8.2.0",
+    "electron-updater": "^6.8.3",
     "lucide-react": "^1.8.0",
     "uiohook-napi": "^1.5.4"
   },

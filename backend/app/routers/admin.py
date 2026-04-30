@@ -4,16 +4,18 @@ from __future__ import annotations
 import csv
 import io
 import uuid
-from datetime import date, datetime, timedelta, timezone  # noqa: F401 -- datetime used below
+from datetime import date, datetime, timedelta, timezone
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from sqlalchemy import and_, select
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from sqlalchemy import and_, func, select
 from sqlalchemy.orm import Session
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from ..database import get_db
 from ..dependencies import AdminUser
+from ..models.daily_summary import DailySummary
+from ..models.device import Device
 from ..models.settings import Settings as OrgSettings
 from ..models.team import Team
 from ..models.user import User
@@ -31,8 +33,9 @@ from ..schemas.admin import (
     TrendDay,
 )
 from ..schemas.settings import SettingsOut, SettingsUpdate
-from ..security import hash_password
 from ..schemas.summary import DailySummaryListResponse, DayDetailResponse
+from ..security import hash_password
+from ..services.audit import record as audit_record
 from ..services.live_status import snapshot_all_users
 from ..services.summary import compute_daily_summaries, compute_day_detail
 
@@ -74,6 +77,16 @@ def _validate_timezone(tz: str) -> None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"unknown timezone: {tz}") from e
 
 
+def _revoke_user_tokens(db: Session, user: User) -> None:
+    """Stamp password_changed_at + clear all device refresh JTIs for this user."""
+    user.password_changed_at = datetime.now(timezone.utc)
+    db.execute(
+        Device.__table__.update()
+        .where(Device.user_id == user.id)
+        .values(refresh_token_jti=None)
+    )
+
+
 @router.get("/users", response_model=AdminUserList)
 def list_users(
     admin: AdminUser, db: Annotated[Session, Depends(get_db)]
@@ -85,6 +98,7 @@ def list_users(
 @router.post("/users", response_model=AdminUserDetail, status_code=status.HTTP_201_CREATED)
 def create_user(
     body: AdminUserCreate,
+    request: Request,
     admin: AdminUser,
     db: Annotated[Session, Depends(get_db)],
 ) -> AdminUserDetail:
@@ -106,6 +120,16 @@ def create_user(
         email_verified_at=datetime.now(timezone.utc),  # admin vouches for them
     )
     db.add(u)
+    db.flush()
+    audit_record(
+        db,
+        actor_id=admin.id,
+        action="user.create",
+        target_type="user",
+        target_id=u.id,
+        diff={"after": {"email": u.email, "role": u.role, "team_id": str(u.team_id) if u.team_id else None}},
+        request=request,
+    )
     db.commit()
     db.refresh(u)
     return _detail(u, _team_name_for(db, u.team_id))
@@ -125,10 +149,20 @@ def get_user(
 def update_user(
     user_id: uuid.UUID,
     body: AdminUserUpdate,
+    request: Request,
     admin: AdminUser,
     db: Annotated[Session, Depends(get_db)],
 ) -> AdminUserDetail:
     u = _get_user(db, user_id)
+    before = {
+        "name": u.name,
+        "email": u.email,
+        "role": u.role,
+        "team_id": str(u.team_id) if u.team_id else None,
+        "position": u.position,
+        "timezone": u.timezone,
+        "is_active": u.is_active,
+    }
 
     if body.email is not None:
         new_email = body.email.lower()
@@ -159,6 +193,7 @@ def update_user(
         u.team_id = body.team_id
     if body.password is not None:
         u.password_hash = hash_password(body.password)
+        _revoke_user_tokens(db, u)
     if body.is_active is not None:
         if u.role == "admin" and not body.is_active:
             remaining = db.execute(
@@ -167,6 +202,28 @@ def update_user(
             if remaining is None:
                 raise HTTPException(status.HTTP_400_BAD_REQUEST, "cannot disable the last admin")
         u.is_active = body.is_active
+        if not body.is_active:
+            _revoke_user_tokens(db, u)
+
+    after = {
+        "name": u.name,
+        "email": u.email,
+        "role": u.role,
+        "team_id": str(u.team_id) if u.team_id else None,
+        "position": u.position,
+        "timezone": u.timezone,
+        "is_active": u.is_active,
+    }
+    diff = {"before": before, "after": after, "password_changed": body.password is not None}
+    audit_record(
+        db,
+        actor_id=admin.id,
+        action="user.update",
+        target_type="user",
+        target_id=u.id,
+        diff=diff,
+        request=request,
+    )
 
     db.commit()
     db.refresh(u)
@@ -205,6 +262,7 @@ def user_day(
 @router.put("/settings", response_model=SettingsOut)
 def update_settings(
     body: SettingsUpdate,
+    request: Request,
     admin: AdminUser,
     db: Annotated[Session, Depends(get_db)],
 ) -> SettingsOut:
@@ -212,10 +270,28 @@ def update_settings(
     if s is None:
         s = OrgSettings(id=1)
         db.add(s)
+    before = {
+        "idle_threshold_minutes": s.idle_threshold_minutes,
+        "workday_start_hour": s.workday_start_hour,
+        "target_hours_per_day": s.target_hours_per_day,
+    }
     s.idle_threshold_minutes = body.idle_threshold_minutes
     s.workday_start_hour = body.workday_start_hour
     s.target_hours_per_day = body.target_hours_per_day
     s.updated_by = admin.id
+    after = {
+        "idle_threshold_minutes": s.idle_threshold_minutes,
+        "workday_start_hour": s.workday_start_hour,
+        "target_hours_per_day": s.target_hours_per_day,
+    }
+    audit_record(
+        db,
+        actor_id=admin.id,
+        action="settings.update",
+        target_type="settings",
+        diff={"before": before, "after": after},
+        request=request,
+    )
     db.commit()
     db.refresh(s)
     return SettingsOut(
@@ -250,6 +326,73 @@ def overview(admin: AdminUser, db: Annotated[Session, Depends(get_db)]) -> TeamO
     )
 
 
+# ---------------------------------------------------------------------------
+# Trend / report aggregation. The previous implementation looped over every
+# active user and called compute_daily_summaries() per user — N+1 against
+# both daily_summary and the live-aggregation paths. We now hit
+# daily_summary in a single GROUP BY and only fall back to live aggregation
+# for the (typically) rolling 7-day uncached window.
+# ---------------------------------------------------------------------------
+
+
+_LIVE_FALLBACK_DAYS = 7
+
+
+def _summary_grid(
+    db: Session,
+    users: list[User],
+    from_date: date,
+    to_date: date,
+) -> dict[tuple[uuid.UUID, date], tuple[int, int, int]]:
+    """Returns {(user_id, date): (active, idle, break)} from daily_summary
+    plus live aggregation for any (user, date) within the last 7 days
+    that has no cached row. Doesn't compute anything for users not in
+    `users`."""
+    if not users:
+        return {}
+    user_ids = [u.id for u in users]
+
+    cached_rows = db.execute(
+        select(
+            DailySummary.user_id,
+            DailySummary.date,
+            DailySummary.total_active_seconds,
+            DailySummary.total_idle_seconds,
+            DailySummary.total_break_seconds,
+        ).where(
+            and_(
+                DailySummary.user_id.in_(user_ids),
+                DailySummary.date >= from_date,
+                DailySummary.date <= to_date,
+            )
+        )
+    ).all()
+    grid: dict[tuple[uuid.UUID, date], tuple[int, int, int]] = {}
+    for uid, d, a, i, b in cached_rows:
+        grid[(uid, d)] = (int(a), int(i), int(b))
+
+    # Live fallback for the most recent N days that the rebuild may not
+    # have covered yet (including today). Bounded loop — N <= 7.
+    today = datetime.now(timezone.utc).date()
+    live_lo = max(from_date, today - timedelta(days=_LIVE_FALLBACK_DAYS))
+    live_hi = min(to_date, today)
+    if live_lo <= live_hi:
+        for u in users:
+            cursor = live_lo
+            while cursor <= live_hi:
+                if (u.id, cursor) not in grid:
+                    days = compute_daily_summaries(db, u, cursor, cursor)
+                    if days:
+                        d0 = days[0]
+                        grid[(u.id, cursor)] = (
+                            d0.total_active_seconds,
+                            d0.total_idle_seconds,
+                            d0.total_break_seconds,
+                        )
+                cursor += timedelta(days=1)
+    return grid
+
+
 @router.get("/team-trend", response_model=TeamTrendResponse)
 def team_trend(
     from_date: Annotated[date, Query(alias="from")],
@@ -263,26 +406,25 @@ def team_trend(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "range too wide (max 92 days)")
 
     users = db.execute(select(User).where(User.is_active.is_(True))).scalars().all()
-    totals: dict[str, dict[str, int]] = {}
-    for u in users:
-        for d in compute_daily_summaries(db, u, from_date, to_date):
-            key = d.date.isoformat()
-            bucket = totals.setdefault(key, {"a": 0, "i": 0, "b": 0})
-            bucket["a"] += d.total_active_seconds
-            bucket["i"] += d.total_idle_seconds
-            bucket["b"] += d.total_break_seconds
+    grid = _summary_grid(db, list(users), from_date, to_date)
+
+    by_date: dict[date, list[int]] = {}
+    for (_uid, d), (a, i, b) in grid.items():
+        bucket = by_date.setdefault(d, [0, 0, 0])
+        bucket[0] += a
+        bucket[1] += i
+        bucket[2] += b
 
     days: list[TrendDay] = []
     cursor = from_date
     while cursor <= to_date:
-        iso = cursor.isoformat()
-        t = totals.get(iso, {"a": 0, "i": 0, "b": 0})
+        a, i, b = by_date.get(cursor, [0, 0, 0])
         days.append(
             TrendDay(
-                date=iso,
-                active_hours=round(t["a"] / 3600, 2),
-                idle_hours=round(t["i"] / 3600, 2),
-                break_hours=round(t["b"] / 3600, 2),
+                date=cursor.isoformat(),
+                active_hours=round(a / 3600, 2),
+                idle_hours=round(i / 3600, 2),
+                break_hours=round(b / 3600, 2),
             )
         )
         cursor += timedelta(days=1)
@@ -290,7 +432,15 @@ def team_trend(
     return TeamTrendResponse(from_date=from_date.isoformat(), to_date=to_date.isoformat(), days=days)
 
 
-@router.get("/reports")
+@router.get(
+    "/reports",
+    responses={
+        200: {
+            "description": "report payload",
+            "content": {"text/csv": {}, "application/json": {}},
+        }
+    },
+)
 def reports(
     from_date: Annotated[date, Query(alias="from")],
     to_date: Annotated[date, Query(alias="to")],
@@ -309,52 +459,63 @@ def reports(
     q = select(User).where(User.is_active.is_(True))
     if team_id is not None:
         q = q.where(User.team_id == team_id)
-    users = db.execute(q).scalars().all()
+    users = list(db.execute(q).scalars().all())
 
     team_names = {t.id: t.name for t in db.execute(select(Team)).scalars().all()}
+    user_index = {u.id: u for u in users}
+    grid = _summary_grid(db, users, from_date, to_date)
     rows: list[ReportRow] = []
 
     if group_by == "team":
-        # One row per (team, date) — totals across all members in that team.
-        totals: dict[tuple[uuid.UUID | None, str], dict[str, int]] = {}
-        for u in users:
-            for d in compute_daily_summaries(db, u, from_date, to_date):
-                key = (u.team_id, d.date.isoformat())
-                bucket = totals.setdefault(key, {"a": 0, "i": 0, "b": 0})
-                bucket["a"] += d.total_active_seconds
-                bucket["i"] += d.total_idle_seconds
-                bucket["b"] += d.total_break_seconds
-        for (tid, iso), t in sorted(totals.items(), key=lambda kv: (kv[0][1], team_names.get(kv[0][0]) or "zz")):
-            if not include_zero and t["a"] + t["i"] + t["b"] == 0:
+        team_totals: dict[tuple[uuid.UUID | None, date], list[int]] = {}
+        for (uid, d), (a, i, b) in grid.items():
+            u = user_index.get(uid)
+            if u is None:
+                continue
+            bucket = team_totals.setdefault((u.team_id, d), [0, 0, 0])
+            bucket[0] += a
+            bucket[1] += i
+            bucket[2] += b
+        for (tid, d), (a, i, b) in sorted(
+            team_totals.items(), key=lambda kv: (kv[0][1], team_names.get(kv[0][0]) or "zz")
+        ):
+            if not include_zero and a + i + b == 0:
                 continue
             rows.append(
                 ReportRow(
                     user_id=tid or uuid.UUID(int=0),
                     name=team_names.get(tid) or "— No team —",
                     email="",
-                    date=iso,
-                    active_hours=round(t["a"] / 3600, 2),
-                    idle_hours=round(t["i"] / 3600, 2),
-                    break_hours=round(t["b"] / 3600, 2),
+                    date=d.isoformat(),
+                    active_hours=round(a / 3600, 2),
+                    idle_hours=round(i / 3600, 2),
+                    break_hours=round(b / 3600, 2),
                 )
             )
     else:
-        for u in users:
-            for d in compute_daily_summaries(db, u, from_date, to_date):
-                total = d.total_active_seconds + d.total_idle_seconds + d.total_break_seconds
-                if not include_zero and total == 0:
-                    continue
-                rows.append(
-                    ReportRow(
-                        user_id=u.id,
-                        name=u.name,
-                        email=u.email,
-                        date=d.date.isoformat(),
-                        active_hours=round(d.total_active_seconds / 3600, 2),
-                        idle_hours=round(d.total_idle_seconds / 3600, 2),
-                        break_hours=round(d.total_break_seconds / 3600, 2),
-                    )
+        # Stable ordering: user name, then date.
+        keys = sorted(
+            grid.keys(),
+            key=lambda k: ((user_index[k[0]].name if k[0] in user_index else ""), k[1]),
+        )
+        for uid, d in keys:
+            u = user_index.get(uid)
+            if u is None:
+                continue
+            a, i, b = grid[(uid, d)]
+            if not include_zero and a + i + b == 0:
+                continue
+            rows.append(
+                ReportRow(
+                    user_id=u.id,
+                    name=u.name,
+                    email=u.email,
+                    date=d.isoformat(),
+                    active_hours=round(a / 3600, 2),
+                    idle_hours=round(i / 3600, 2),
+                    break_hours=round(b / 3600, 2),
                 )
+            )
 
     if fmt == "json":
         return Response(

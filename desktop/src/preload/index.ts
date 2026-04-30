@@ -71,6 +71,8 @@ const api = {
     ipcRenderer.invoke(IpcChannels.setMeetingReminderMinutes, minutes),
   setAutoLockMinutes: (minutes: number): Promise<void> =>
     ipcRenderer.invoke(IpcChannels.setAutoLockMinutes, minutes),
+  snoozeIdleNudge: (minutes: number): Promise<void> =>
+    ipcRenderer.invoke(IpcChannels.snoozeIdleNudge, minutes),
 
   // floating widget
   toggleWidget: (): Promise<void> => ipcRenderer.invoke(IpcChannels.toggleWidget),

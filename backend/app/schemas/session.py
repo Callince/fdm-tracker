@@ -9,7 +9,9 @@ from pydantic import BaseModel
 
 
 class SessionStartRequest(BaseModel):
-    started_at: datetime  # client's local timestamp (must be UTC-aware)
+    """Body kept for backward compat with desktop clients; the server
+    uses its own clock as the authoritative `started_at`."""
+    started_at: Optional[datetime] = None
 
 
 class SessionStartResponse(BaseModel):
@@ -19,7 +21,7 @@ class SessionStartResponse(BaseModel):
 
 class SessionEndRequest(BaseModel):
     session_id: uuid.UUID
-    ended_at: datetime
+    ended_at: Optional[datetime] = None  # ignored; server clock wins
 
 
 class SessionEndResponse(BaseModel):

@@ -1,14 +1,81 @@
-"""Shared test fixtures."""
+"""Shared test fixtures.
+
+DB-backed fixtures (`client`, `signing_helpers`) are opt-in: tests that
+declare them get a freshly-recreated schema and a per-test table reset.
+Pure-unit tests (e.g. test_smoke) don't pull in any DB.
+"""
 from __future__ import annotations
 
 import os
+import secrets
+from typing import Iterator
 
 import pytest
 
+# These must be set BEFORE the app is imported.
 os.environ.setdefault("DATABASE_URL", "postgresql+psycopg2://fdm:fdm@localhost:5432/fdm_test")
-os.environ.setdefault("JWT_SECRET", "x" * 64)
+os.environ.setdefault("JWT_SECRET", secrets.token_urlsafe(48))
+os.environ.setdefault("ENV", "test")
+os.environ.setdefault("EMAIL_BACKEND", "console")
+os.environ.setdefault("CORS_ORIGINS", "http://localhost:3000")
+os.environ.setdefault("ALLOWED_SIGNUP_DOMAINS", "fourdm.com,test.local")
 
 
-@pytest.fixture(autouse=True)
-def _anyio_backend() -> str:
-    return "asyncio"
+@pytest.fixture(scope="session")
+def _db_setup() -> Iterator[None]:
+    from sqlalchemy.exc import OperationalError
+
+    from app.database import Base, engine
+    from app import models  # noqa: F401  -- register models on metadata
+
+    try:
+        Base.metadata.drop_all(bind=engine)
+        Base.metadata.create_all(bind=engine)
+    except OperationalError as e:
+        pytest.skip(
+            f"Test DB unreachable ({e.orig.args[0] if e.orig.args else e}). "
+            "Set DATABASE_URL to a local Postgres (e.g. via docker-compose) "
+            "to run integration tests."
+        )
+    yield
+    try:
+        Base.metadata.drop_all(bind=engine)
+    except Exception:
+        pass
+
+
+@pytest.fixture
+def _clean_tables(_db_setup) -> Iterator[None]:
+    from app.database import Base, engine
+
+    yield
+    with engine.begin() as conn:
+        for table in reversed(Base.metadata.sorted_tables):
+            conn.execute(table.delete())
+
+
+@pytest.fixture
+def client(_clean_tables):
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.rate_limit import _reset
+
+    _reset()  # rate limit counters are global; clear between tests
+    return TestClient(app)
+
+
+@pytest.fixture
+def signing_helpers():
+    """Build an HMAC signature helper bound to a specific device secret."""
+    import hashlib
+    import hmac
+    import time
+
+    def signature(secret: str, method: str, path: str, body: bytes) -> str:
+        t = int(time.time())
+        body_hash = hashlib.sha256(body).hexdigest()
+        signed = f"{method.upper()}\n{path}\n{t}\n{body_hash}".encode()
+        mac = hmac.new(secret.encode(), signed, hashlib.sha256).hexdigest()
+        return f"t={t},v1={mac}"
+
+    return signature

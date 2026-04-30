@@ -27,7 +27,12 @@ jobs:
         working-directory: desktop
     env:
       FDM_API_BASE: https://api.fourdm.services
+      # Baked into the bundle for electron-updater (private GitHub repo).
+      FDM_GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      # Used by electron-builder to upload artifacts + latest.yml to the
+      # Release matching this tag. GITHUB_TOKEN works for the same repo.
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
@@ -44,30 +49,15 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build installer
-        run: npm run ${{ matrix.target }}
+      - name: Build installer + publish to GitHub Releases
+        run: npm run ${{ matrix.target }} -- --publish always
+        env:
+          # electron-builder's github publisher reads this name.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Upload artifacts
+      - name: Upload artifacts (workflow record)
         uses: actions/upload-artifact@v4
         with:
           name: fdm-tracker-${{ matrix.os }}
           path: desktop/release/${{ matrix.artifact }}
           if-no-files-found: error
-
-  release:
-    needs: build
-    runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-          merge-multiple: true
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: artifacts/*
-          generate_release_notes: true
-          draft: false
-          prerelease: false

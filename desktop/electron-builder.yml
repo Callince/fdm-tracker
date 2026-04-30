@@ -49,4 +49,9 @@ mac:
   identity: null
   notarize: false
 
-publish: null
+publish:
+  - provider: github
+    owner: Callince
+    repo: fdm-tracker
+    private: true
+    releaseType: release

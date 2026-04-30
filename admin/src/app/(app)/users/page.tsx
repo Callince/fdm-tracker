@@ -227,6 +227,7 @@ export default function PeoplePage() {
                       href={`/teams/${t.id}`}
                       className="p-1 rounded hover:bg-white/40 dark:hover:bg-slate-800/40"
                       title="Open team detail"
+                      aria-label={`Open ${t.name} team detail`}
                       onClick={(e) => e.stopPropagation()}
                     >
                       <ArrowRight size={12} />
@@ -239,6 +240,7 @@ export default function PeoplePage() {
                       }}
                       className="p-1 rounded hover:bg-white/40 dark:hover:bg-slate-800/40"
                       title="Rename"
+                      aria-label={`Rename ${t.name}`}
                     >
                       <Pencil size={12} />
                     </button>
@@ -249,6 +251,7 @@ export default function PeoplePage() {
                       }}
                       className="p-1 rounded hover:bg-white/40 dark:hover:bg-slate-800/40 text-red-600 dark:text-red-400"
                       title="Delete"
+                      aria-label={`Delete ${t.name}`}
                     >
                       <Trash2 size={12} />
                     </button>
@@ -384,14 +387,14 @@ export default function PeoplePage() {
         size="md"
         footer={
           <>
-            <Button variant="outline" onClick={() => setUserOpen(false)}>Cancel</Button>
-            <Button onClick={(e) => submitUser(e as unknown as FormEvent)} disabled={createUserM.isPending}>
+            <Button variant="outline" type="button" onClick={() => setUserOpen(false)}>Cancel</Button>
+            <Button type="submit" form="create-user-form" disabled={createUserM.isPending}>
               {createUserM.isPending ? "Creating…" : "Create"}
             </Button>
           </>
         }
       >
-        <form onSubmit={submitUser} className="space-y-3">
+        <form id="create-user-form" onSubmit={submitUser} className="space-y-3">
           <Input placeholder="Full name" value={userForm.name} onChange={(e) => setUserForm({ ...userForm, name: e.target.value })} required />
           <Input type="email" placeholder="Email" value={userForm.email} onChange={(e) => setUserForm({ ...userForm, email: e.target.value })} required />
           <Input placeholder="Position / job title (e.g. Designer, PM)" value={userForm.position} onChange={(e) => setUserForm({ ...userForm, position: e.target.value })} />
@@ -401,6 +404,7 @@ export default function PeoplePage() {
           </div>
           <Input type="password" placeholder="Temporary password (min 8)" minLength={8} value={userForm.password} onChange={(e) => setUserForm({ ...userForm, password: e.target.value })} required />
           <select
+            aria-label="Role"
             className="h-10 w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand/60"
             value={userForm.role}
             onChange={(e) => setUserForm({ ...userForm, role: e.target.value as "user" | "admin" })}
@@ -410,7 +414,6 @@ export default function PeoplePage() {
           </select>
           <Input placeholder="Timezone (IANA)" value={userForm.timezone} onChange={(e) => setUserForm({ ...userForm, timezone: e.target.value })} />
           {userErr && <div className="text-sm text-red-600 dark:text-red-400">{userErr}</div>}
-          <button type="submit" className="hidden" />
         </form>
       </Modal>
 
@@ -423,14 +426,14 @@ export default function PeoplePage() {
         size="sm"
         footer={
           <>
-            <Button variant="outline" onClick={() => setTeamOpen(false)}>Cancel</Button>
-            <Button onClick={(e) => submitTeam(e as unknown as FormEvent)} disabled={createTeamM.isPending || !teamName.trim()}>
+            <Button variant="outline" type="button" onClick={() => setTeamOpen(false)}>Cancel</Button>
+            <Button type="submit" form="create-team-form" disabled={createTeamM.isPending || !teamName.trim()}>
               {createTeamM.isPending ? "Creating…" : "Create team"}
             </Button>
           </>
         }
       >
-        <form onSubmit={submitTeam} className="space-y-3">
+        <form id="create-team-form" onSubmit={submitTeam} className="space-y-3">
           <Input
             placeholder="Team name"
             required
@@ -439,7 +442,6 @@ export default function PeoplePage() {
             onChange={(e) => setTeamName(e.target.value)}
           />
           {teamErr && <div className="text-sm text-red-600 dark:text-red-400">{teamErr}</div>}
-          <button type="submit" className="hidden" />
         </form>
       </Modal>
 

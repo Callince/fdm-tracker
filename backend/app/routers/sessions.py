@@ -1,4 +1,10 @@
-"""Start/end a work session."""
+"""Start/end a work session.
+
+Timestamps are server-authoritative: we ignore client-supplied `started_at`
+/ `ended_at` to prevent backdating. Activity buckets (which carry their
+own bucket_start) still allow up-to-14-day backfill via the anti-spoof
+rules; that's the right surface for offline-replay correctness.
+"""
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -20,6 +26,13 @@ from ..schemas.session import (
 )
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
+
+
+def _client_ip(request: Request) -> str | None:
+    fwd = request.headers.get("x-forwarded-for")
+    if fwd:
+        return fwd.split(",")[0].strip()
+    return request.client.host if request.client else None
 
 
 @router.post("/start", response_model=SessionStartResponse)
@@ -49,21 +62,17 @@ def start_session(
         s.ended_at = now_utc
         _close_open_breaks_for_session(db, s.id, now_utc)
 
-    # Also close any break across the user that is still open but orphaned
-    # (no open parent session) — defensive cleanup.
+    # Defensive: also close any break orphaned across the user.
     _close_orphaned_breaks(db, user.id, now_utc)
-
-    if body.started_at.tzinfo is None:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "started_at must be timezone-aware")
 
     new_session = WorkSession(
         user_id=user.id,
         device_id=device_id,
-        started_at=body.started_at,
-        client_ip=request.client.host if request.client else None,
+        started_at=now_utc,
+        client_ip=_client_ip(request),
     )
     db.add(new_session)
-    device.last_seen_at = datetime.now(timezone.utc)
+    device.last_seen_at = now_utc
     db.commit()
     db.refresh(new_session)
     return SessionStartResponse(session_id=new_session.id, started_at=new_session.started_at)
@@ -77,15 +86,16 @@ def end_session(
     db: Annotated[Session, Depends(get_db)],
 ) -> SessionEndResponse:
     user, device_id = current
+    now_utc = datetime.now(timezone.utc)
     session = db.get(WorkSession, body.session_id)
     if session is None or session.user_id != user.id or session.device_id != device_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "session not found")
     if session.ended_at is not None:
         return SessionEndResponse(session_id=session.id, ended_at=session.ended_at)
-    session.ended_at = body.ended_at
-    _close_open_breaks_for_session(db, session.id, body.ended_at)
-    _close_orphaned_breaks(db, user.id, body.ended_at)
-    device.last_seen_at = datetime.now(timezone.utc)
+    session.ended_at = now_utc
+    _close_open_breaks_for_session(db, session.id, now_utc)
+    _close_orphaned_breaks(db, user.id, now_utc)
+    device.last_seen_at = now_utc
     db.commit()
     return SessionEndResponse(session_id=session.id, ended_at=session.ended_at)
 
@@ -101,8 +111,8 @@ def _close_open_breaks_for_session(db: Session, session_id, when: datetime) -> N
 
 
 def _close_orphaned_breaks(db: Session, user_id, when: datetime) -> None:
-    """Close any break whose parent session has ended but which never got its
-    own ended_at set — happens when a client crashes mid-break."""
+    """Close any break whose parent session has ended but which never got
+    its own ended_at set — happens when a client crashes mid-break."""
     rows = db.execute(
         select(BreakLog, WorkSession)
         .join(WorkSession, WorkSession.id == BreakLog.session_id)
@@ -115,4 +125,4 @@ def _close_orphaned_breaks(db: Session, user_id, when: datetime) -> None:
         )
     ).all()
     for b, s in rows:
-        b.ended_at = s.ended_at or when
+        b.ended_at = s.ended_at if s.ended_at is not None else when

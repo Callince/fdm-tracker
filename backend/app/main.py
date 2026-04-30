@@ -1,12 +1,22 @@
 """FastAPI entrypoint."""
 from __future__ import annotations
 
-from fastapi import FastAPI
+import logging
+import time
+import uuid
+
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 
 from .config import get_settings
-from .logging_config import configure_logging
+from .database import engine
+from .logging_config import configure_logging, get_logger
 from .routers import activity, admin, auth, breaks, holidays, me, meetings, sessions, teams
+
+
+_log = get_logger("app")
 
 
 def create_app() -> FastAPI:
@@ -18,13 +28,54 @@ def create_app() -> FastAPI:
         version="0.1.0",
         description="Internal employee monitoring — Fourth Dimension Media Solutions.",
     )
+
+    # CORS: in production we require an explicit allow-list. `*` with
+    # `allow_credentials=True` is invalid per the CORS spec and gets
+    # rejected by browsers, so we never emit it.
+    origins = settings.cors_origins_list
+    if not origins:
+        if settings.env.lower() == "production":
+            raise RuntimeError("CORS_ORIGINS must be set in production")
+        origins = ["http://localhost:3000"]
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.cors_origins_list or ["*"],
+        allow_origins=origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    @app.middleware("http")
+    async def _request_context(request: Request, call_next):
+        rid = request.headers.get("x-request-id") or uuid.uuid4().hex
+        request.state.request_id = rid
+        started = time.perf_counter()
+        try:
+            response = await call_next(request)
+        except Exception:
+            elapsed_ms = int((time.perf_counter() - started) * 1000)
+            _log.exception(
+                "unhandled exception",
+                extra={"request_id": rid, "path": request.url.path, "elapsed_ms": elapsed_ms},
+            )
+            return JSONResponse(
+                status_code=500,
+                content={"detail": "internal server error", "request_id": rid},
+                headers={"X-Request-Id": rid},
+            )
+        elapsed_ms = int((time.perf_counter() - started) * 1000)
+        response.headers["X-Request-Id"] = rid
+        logging.getLogger("api").info(
+            "request",
+            extra={
+                "request_id": rid,
+                "method": request.method,
+                "path": request.url.path,
+                "status": response.status_code,
+                "elapsed_ms": elapsed_ms,
+            },
+        )
+        return response
 
     app.include_router(auth.router)
     app.include_router(sessions.router)
@@ -42,6 +93,12 @@ def create_app() -> FastAPI:
     @app.get("/health", tags=["meta"])
     def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.get("/health/ready", tags=["meta"])
+    def health_ready() -> dict[str, str]:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        return {"status": "ready"}
 
     return app
 

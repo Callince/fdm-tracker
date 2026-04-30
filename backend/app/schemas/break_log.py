@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 
 class BreakStartRequest(BaseModel):
     session_id: uuid.UUID
-    started_at: datetime
+    started_at: Optional[datetime] = None  # ignored; server clock wins
     reason: Optional[str] = Field(default=None, max_length=255)
 
 
@@ -20,7 +20,7 @@ class BreakStartResponse(BaseModel):
 
 class BreakEndRequest(BaseModel):
     break_id: uuid.UUID
-    ended_at: datetime
+    ended_at: Optional[datetime] = None  # ignored; server clock wins
 
 
 class BreakEndResponse(BaseModel):

@@ -36,6 +36,7 @@ let todayRefreshBusy = false;
 
 // Idle-nudge + EOD reminder state
 let lastNudgeAt = 0;
+let nudgeSnoozedUntil = 0;
 let lastEodNudgeLocalDate = "";
 
 // Auto-break state: id of a break the app started automatically on prolonged
@@ -301,7 +302,11 @@ function evaluateNudges() {
     const thresholdSec = (a.profile.idle_threshold_minutes ?? 5) * 60;
     const idleSec = idleMonitor.lastIdleSeconds();
     const now = Date.now();
-    if (idleSec >= thresholdSec * 2 && now - lastNudgeAt > 10 * 60_000) {
+    if (
+      idleSec >= thresholdSec * 2 &&
+      now - lastNudgeAt > 10 * 60_000 &&
+      now > nudgeSnoozedUntil
+    ) {
       lastNudgeAt = now;
       notify(
         "Still working?",
@@ -645,6 +650,11 @@ export function registerIpc() {
   ipcMain.handle(IpcChannels.setAutoLockMinutes, async (_e, minutes: number) => {
     prefs.set("autoLockMinutes", Math.max(0, Math.min(240, Math.round(minutes))));
     pushStatus();
+  });
+
+  ipcMain.handle(IpcChannels.snoozeIdleNudge, async (_e, minutes: number) => {
+    const ms = Math.max(1, Math.min(120, Math.round(minutes))) * 60_000;
+    nudgeSnoozedUntil = Date.now() + ms;
   });
 
   ipcMain.handle(IpcChannels.endBreakById, async (_e, body: { break_id: string }) => {

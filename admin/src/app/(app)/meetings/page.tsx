@@ -277,14 +277,14 @@ export default function MeetingsPage() {
         size="lg"
         footer={
           <>
-            <Button variant="outline" onClick={closeModal}>Cancel</Button>
-            <Button onClick={(e) => submit(e as unknown as FormEvent)} disabled={busy}>
+            <Button variant="outline" type="button" onClick={closeModal}>Cancel</Button>
+            <Button type="submit" form="meeting-form" disabled={busy}>
               {busy ? "Saving…" : editing ? "Save changes" : "Schedule"}
             </Button>
           </>
         }
       >
-        <form onSubmit={submit} className="space-y-3">
+        <form id="meeting-form" onSubmit={submit} className="space-y-3">
           <Input placeholder="Title (e.g. Sprint planning)" value={form.title}
                  onChange={(e) => setForm({ ...form, title: e.target.value })} required />
           <div className="grid grid-cols-2 gap-3">
@@ -366,7 +366,6 @@ export default function MeetingsPage() {
             />
           </div>
           {err && <div className="text-sm text-red-600 dark:text-red-400">{err}</div>}
-          <button type="submit" className="hidden" />
         </form>
       </Modal>
 

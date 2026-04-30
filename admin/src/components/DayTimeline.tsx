@@ -1,10 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { addMinutes, differenceInSeconds, format as fmt, parseISO, startOfHour } from "date-fns";
+import { memo, useMemo, useState } from "react";
+import { addMinutes, differenceInSeconds, parseISO, startOfHour } from "date-fns";
 import { formatInTimeZone } from "date-fns-tz";
 import type { DayDetail } from "@/lib/types";
 import { useIsDark } from "@/lib/useIsDark";
+import { CHART_COLORS } from "@/lib/chart-theme";
 
 interface Props { detail: DayDetail }
 
@@ -17,9 +18,9 @@ interface Range {
 }
 
 const KIND_STYLE: Record<RangeKind, { fill: string; text: string; label: string }> = {
-  active: { fill: "#10b981", text: "text-active", label: "Active" },
-  idle: { fill: "#f59e0b", text: "text-idle", label: "Idle" },
-  break: { fill: "#3b82f6", text: "text-brk", label: "Break" },
+  active: { fill: CHART_COLORS.active, text: "text-active", label: "Active" },
+  idle: { fill: CHART_COLORS.idle, text: "text-idle", label: "Idle" },
+  break: { fill: CHART_COLORS.brk, text: "text-brk", label: "Break" },
 };
 
 function humanDuration(secs: number): string {
@@ -73,7 +74,7 @@ function generateTicks(min: Date, max: Date): Date[] {
   return ticks;
 }
 
-export function DayTimeline({ detail }: Props) {
+function DayTimelineImpl({ detail }: Props) {
   const dark = useIsDark();
   const gridStroke = dark ? "#334155" : "#e2e8f0";
   const laneBg = dark ? "#1e293b" : "#f8fafc";
@@ -297,3 +298,5 @@ export function DayTimeline({ detail }: Props) {
     </div>
   );
 }
+
+export const DayTimeline = memo(DayTimelineImpl);

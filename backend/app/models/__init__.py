@@ -10,6 +10,8 @@ from .settings import Settings
 from .team import Team
 from .meeting import Meeting
 from .holiday import Holiday
+from .hmac_nonce import HmacNonce
+from .audit_log import AuditLog
 
 __all__ = [
     "User",
@@ -23,4 +25,6 @@ __all__ = [
     "Team",
     "Meeting",
     "Holiday",
+    "HmacNonce",
+    "AuditLog",
 ]

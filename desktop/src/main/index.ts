@@ -6,6 +6,7 @@ import { syncWorker } from "./syncWorker";
 import { auth } from "./auth";
 import { installGlobalErrorHandlers, log } from "./logger";
 import { buildAppMenu } from "./menu";
+import { startAutoUpdater } from "./autoUpdate";
 
 installGlobalErrorHandlers();
 
@@ -68,6 +69,9 @@ if (!gotLock) {
     }
 
     setInterval(() => ipcOps.setConnectionOnline(net.isOnline()), 5_000);
+
+    // Silent auto-update: download in background, install on next quit.
+    startAutoUpdater();
 
     // Sleep / lock detection — close the current bucket so any time the
     // user was away (laptop closed, screen locked, OS suspended) is
