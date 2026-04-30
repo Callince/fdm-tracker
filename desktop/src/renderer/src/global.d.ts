@@ -56,6 +56,7 @@ declare global {
     setMeetingNotifications: (enabled: boolean) => Promise<void>;
     setMeetingAlarm: (enabled: boolean) => Promise<void>;
     setMeetingReminderMinutes: (minutes: number) => Promise<void>;
+    setAutoLockMinutes: (minutes: number) => Promise<void>;
     toggleWidget: () => Promise<void>;
     hideWidget: () => Promise<void>;
 

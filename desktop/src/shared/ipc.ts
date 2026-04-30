@@ -23,6 +23,7 @@ export const IpcChannels = {
   setMeetingNotifications: "fdm:prefs:meetingNotifications",
   setMeetingAlarm: "fdm:prefs:meetingAlarm",
   setMeetingReminderMinutes: "fdm:prefs:meetingReminderMinutes",
+  setAutoLockMinutes: "fdm:prefs:autoLockMinutes",
   listHolidays: "fdm:holidays:list",
   listMyMeetings: "fdm:meetings:listMine",
   openExternal: "fdm:shell:openExternal",
