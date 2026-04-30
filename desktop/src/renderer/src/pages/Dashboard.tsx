@@ -1,3 +1,4 @@
+import * as React from "react";
 import { useState } from "react";
 import type { AppStatus } from "@shared/types";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
@@ -16,6 +17,24 @@ interface Props {
 export function Dashboard({ status }: Props) {
   const [busy, setBusy] = useState<"start" | "end" | "break" | "resume" | null>(null);
   const [confirmEnd, setConfirmEnd] = useState(false);
+
+  // Close the End-work confirm on Escape so it matches the rest of the app.
+  React.useEffect(() => {
+    if (!confirmEnd) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setConfirmEnd(false); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [confirmEnd]);
+
+  // Tick once a minute while on break so we can flip into the "overdue" pulse
+  // state the moment the break crosses 30 minutes — without re-rendering every
+  // second like the timer does.
+  const [, bumpBreakTick] = useState(0);
+  React.useEffect(() => {
+    if (!status.on_break) return;
+    const id = setInterval(() => bumpBreakTick((n) => (n + 1) & 0x3fffffff), 30_000);
+    return () => clearInterval(id);
+  }, [status.on_break]);
 
   async function act(kind: "start" | "end" | "break" | "resume") {
     if (kind === "end") {
@@ -47,6 +66,13 @@ export function Dashboard({ status }: Props) {
       : status.session_started_at
     : null;
 
+  // After 30 min on break the timer subtly pulses red — "you've been away a
+  // while, want to come back?" without being a popup.
+  const breakOverdue =
+    status.on_break &&
+    status.break_started_at !== null &&
+    Date.now() - new Date(status.break_started_at).getTime() > 30 * 60_000;
+
   return (
     <div className="space-y-5">
       {/* Hero -------------------------------------------------------------- */}
@@ -67,14 +93,22 @@ export function Dashboard({ status }: Props) {
 
           {timerStart && (
             <div className="text-right">
-              <div className="text-[11px] uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                {status.on_break ? "On break" : "Working"}
+              <div className={`text-[11px] uppercase tracking-wider ${
+                breakOverdue
+                  ? "text-red-600 dark:text-red-400 font-medium"
+                  : "text-slate-500 dark:text-slate-400"
+              }`}>
+                {status.on_break ? (breakOverdue ? "Long break" : "On break") : "Working"}
               </div>
               <LiveTimer
                 startedAt={timerStart}
                 pausedSince={null}
                 className={`text-4xl font-semibold tabular-nums ${
-                  status.on_break ? "text-brk" : "text-active"
+                  breakOverdue
+                    ? "text-red-500 dark:text-red-400 animate-pulse"
+                    : status.on_break
+                      ? "text-brk"
+                      : "text-active"
                 }`}
               />
             </div>
@@ -108,13 +142,6 @@ export function Dashboard({ status }: Props) {
               </Button>
             </>
           )}
-          <span className="self-center text-xs text-slate-500 dark:text-slate-400">
-            Tip: press{" "}
-            <kbd className="px-1.5 py-0.5 rounded bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
-              Ctrl + Alt + B
-            </kbd>{" "}
-            to toggle break anywhere.
-          </span>
           <Button
             size="sm"
             variant="outline"
@@ -124,17 +151,6 @@ export function Dashboard({ status }: Props) {
           >
             {status.widget_visible ? "Hide widget" : "Show widget"}
           </Button>
-          {status.session_active && !status.on_break && (
-            <Button
-              size="sm"
-              variant="outline"
-              className="self-center"
-              onClick={() => { void window.fdm.snoozeIdleNudge(15); }}
-              title="Stop the 'still working?' nudge for the next 15 minutes"
-            >
-              Snooze nudges 15m
-            </Button>
-          )}
         </div>
       </section>
 
@@ -282,9 +298,9 @@ function TargetProgress({ status }: { status: AppStatus }) {
         </div>
       </div>
       <div className="mt-3 h-2 rounded bg-slate-100 dark:bg-slate-800 overflow-hidden flex">
-        <div className="h-full bg-active transition-all" style={{ width: `${activePct}%` }} />
-        <div className="h-full bg-idle transition-all" style={{ width: `${idlePct}%` }} />
-        <div className="h-full bg-brk transition-all" style={{ width: `${breakPct}%` }} />
+        <div className="h-full bg-active transition-all duration-700 ease-out" style={{ width: `${activePct}%` }} />
+        <div className="h-full bg-idle transition-all duration-700 ease-out" style={{ width: `${idlePct}%` }} />
+        <div className="h-full bg-brk transition-all duration-700 ease-out" style={{ width: `${breakPct}%` }} />
       </div>
       {!met && (
         <div className="mt-3 text-xs text-slate-600 dark:text-slate-300">

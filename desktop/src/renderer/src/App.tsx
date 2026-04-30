@@ -36,7 +36,14 @@ export default function App() {
   }
 
   if (!status) {
-    return <div className="h-full flex items-center justify-center text-sm text-slate-500">Loading…</div>;
+    return (
+      <div className="h-full flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-8 w-8 rounded-full border-2 border-brand/30 border-t-brand animate-spin" aria-hidden />
+          <div className="text-xs text-slate-500 dark:text-slate-400">Starting FDM Tracker…</div>
+        </div>
+      </div>
+    );
   }
 
   // ---- unauthenticated flows ----------------------------------------------

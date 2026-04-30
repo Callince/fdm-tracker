@@ -5,6 +5,7 @@ import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { CalendarGrid } from "@/components/CalendarGrid";
 import { DayTimeline } from "@/components/DayTimeline";
+import { Skeleton } from "@/components/Skeleton";
 import { PageHeader } from "@/components/PageHeader";
 import { hms } from "@/lib/format";
 
@@ -66,7 +67,13 @@ export function CalendarPage() {
           </div>
         </CardHeader>
         <CardBody>
-          {loading && <div className="text-sm text-slate-500">Loading…</div>}
+          {loading && (
+            <div className="grid grid-cols-7 gap-1">
+              {Array.from({ length: 35 }).map((_, i) => (
+                <Skeleton key={i} className="h-16 lg:h-20" />
+              ))}
+            </div>
+          )}
           {err && <div className="text-sm text-red-600">{err}</div>}
           <CalendarGrid
             month={month}
@@ -83,7 +90,16 @@ export function CalendarPage() {
           <div className="text-sm font-semibold">Day detail · {format(day, "PP")}</div>
         </CardHeader>
         <CardBody>
-          {!detail && <div className="text-sm text-slate-500">Loading…</div>}
+          {!detail && (
+            <div className="space-y-3">
+              <Skeleton className="h-32 w-full" />
+              <div className="grid grid-cols-3 gap-3 max-w-md">
+                <Skeleton className="h-10" />
+                <Skeleton className="h-10" />
+                <Skeleton className="h-10" />
+              </div>
+            </div>
+          )}
           {detail && (
             <div className="space-y-4">
               <DayTimeline detail={detail} />

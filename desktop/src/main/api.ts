@@ -149,10 +149,12 @@ export const api = {
       id: string;
       title: string;
       meeting_link: string | null;
+      meeting_password: string | null;
       scheduled_at: string;
       duration_minutes: number;
       team_id: string | null;
       team_name: string | null;
+      attendees: { id: string; name: string; email: string }[];
     }> }>({ path: "/me/meetings" });
   },
 

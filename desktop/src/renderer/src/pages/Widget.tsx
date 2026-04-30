@@ -42,6 +42,15 @@ function WidgetBody({ status }: { status: AppStatus }) {
     void window.fdm.setWidgetSize(initial);
   }, []);
 
+  // Re-render once per minute while on break so the "overdue" flag flips at
+  // the 30-min mark even if no other status change comes in.
+  const [, bumpBreakTick] = useState(0);
+  useEffect(() => {
+    if (!status.on_break) return;
+    const id = setInterval(() => bumpBreakTick((n) => (n + 1) & 0x3fffffff), 30_000);
+    return () => clearInterval(id);
+  }, [status.on_break]);
+
   function changeSize(next: WidgetSize) {
     setSize(next);
     localStorage.setItem(SIZE_KEY, next);
@@ -66,7 +75,15 @@ function WidgetBody({ status }: { status: AppStatus }) {
       ? status.break_started_at
       : status.session_started_at
     : null;
-  const stateLabel = !status.session_active ? "Off" : status.on_break ? "Break" : "Working";
+  const breakOverdue =
+    status.on_break &&
+    status.break_started_at !== null &&
+    Date.now() - new Date(status.break_started_at).getTime() > 30 * 60_000;
+  const stateLabel = !status.session_active
+    ? "Off"
+    : status.on_break
+      ? (breakOverdue ? "Long break" : "Break")
+      : "Working";
 
   const target = status.profile?.target_hours_per_day ?? 8;
   const targetSec = target * 3600;
@@ -76,19 +93,23 @@ function WidgetBody({ status }: { status: AppStatus }) {
 
   if (size === "mini") {
     return (
-      <Shell tone={t} size={size} onSize={changeSize}>
+      <Shell tone={t} size={size} onSize={changeSize} overdue={breakOverdue}>
         <div className="flex items-center gap-2 h-full">
-          <StateDot tone={t} />
+          <StateDot tone={t} overdue={breakOverdue} />
           {timerStart ? (
             <LiveTimer
               startedAt={timerStart}
               pausedSince={null}
-              className={`text-[15px] font-semibold tabular-nums ${timerColor(t)}`}
+              className={`text-[15px] font-semibold tabular-nums ${
+                breakOverdue ? "text-red-400 animate-pulse" : timerColor(t)
+              }`}
             />
           ) : (
             <span className="text-[15px] font-semibold tabular-nums text-slate-400">0:00:00</span>
           )}
-          <span className="ml-auto text-[9px] uppercase tracking-widest text-slate-400">
+          <span className={`ml-auto text-[9px] uppercase tracking-widest ${
+            breakOverdue ? "text-red-400" : "text-slate-400"
+          }`}>
             {stateLabel}
           </span>
         </div>
@@ -97,10 +118,12 @@ function WidgetBody({ status }: { status: AppStatus }) {
   }
 
   return (
-    <Shell tone={t} size={size} onSize={changeSize}>
+    <Shell tone={t} size={size} onSize={changeSize} overdue={breakOverdue}>
       <div className="flex items-center gap-2 mb-1.5">
-        <StateDot tone={t} />
-        <span className="text-[10px] uppercase tracking-widest font-semibold text-slate-200">
+        <StateDot tone={t} overdue={breakOverdue} />
+        <span className={`text-[10px] uppercase tracking-widest font-semibold ${
+          breakOverdue ? "text-red-400" : "text-slate-200"
+        }`}>
           {stateLabel}
         </span>
         {timerStart && (
@@ -115,7 +138,9 @@ function WidgetBody({ status }: { status: AppStatus }) {
           <LiveTimer
             startedAt={timerStart}
             pausedSince={null}
-            className={`text-[28px] font-semibold tabular-nums leading-none ${timerColor(t)}`}
+            className={`text-[28px] font-semibold tabular-nums leading-none ${
+              breakOverdue ? "text-red-400 animate-pulse" : timerColor(t)
+            }`}
           />
         ) : (
           <span className="text-[28px] font-semibold tabular-nums leading-none text-slate-400">
@@ -146,9 +171,9 @@ function WidgetBody({ status }: { status: AppStatus }) {
         <div className="h-[3px] rounded-full bg-white/10 overflow-hidden flex">
           {targetSec > 0 && (
             <>
-              <div className="h-full bg-active" style={{ width: `${(status.today_active_seconds / targetSec) * 100}%` }} />
-              <div className="h-full bg-idle" style={{ width: `${(status.today_idle_seconds / targetSec) * 100}%` }} />
-              <div className="h-full bg-brk" style={{ width: `${(status.today_break_seconds / targetSec) * 100}%` }} />
+              <div className="h-full bg-active transition-all duration-700 ease-out" style={{ width: `${(status.today_active_seconds / targetSec) * 100}%` }} />
+              <div className="h-full bg-idle transition-all duration-700 ease-out" style={{ width: `${(status.today_idle_seconds / targetSec) * 100}%` }} />
+              <div className="h-full bg-brk transition-all duration-700 ease-out" style={{ width: `${(status.today_break_seconds / targetSec) * 100}%` }} />
             </>
           )}
         </div>
@@ -175,14 +200,15 @@ function timerColor(t: Tone): string {
   return "text-slate-300";
 }
 
-function StateDot({ tone }: { tone: Tone }) {
-  const cls =
-    tone === "active" ? "bg-active" :
-    tone === "break" ? "bg-brk" :
-    "bg-slate-500";
+function StateDot({ tone, overdue }: { tone: Tone; overdue?: boolean }) {
+  const cls = overdue
+    ? "bg-red-500"
+    : tone === "active" ? "bg-active"
+    : tone === "break" ? "bg-brk"
+    : "bg-slate-500";
   return (
     <span className="relative inline-flex h-2 w-2 shrink-0">
-      {tone !== "idle" && (
+      {(tone !== "idle" || overdue) && (
         <span className={`absolute inset-0 rounded-full ${cls} opacity-50 animate-ping`} />
       )}
       <span className={`relative inline-flex h-2 w-2 rounded-full ${cls}`} />
@@ -209,13 +235,19 @@ function Shell({
   tone,
   size,
   onSize,
+  overdue,
 }: {
   children: React.ReactNode;
   tone: Tone;
   size?: WidgetSize;
   onSize?: (s: WidgetSize) => void;
+  overdue?: boolean;
 }) {
-  const edgeColor = tone === "active" ? "bg-active" : tone === "break" ? "bg-brk" : "bg-slate-500";
+  const edgeColor = overdue
+    ? "bg-red-500 animate-pulse"
+    : tone === "active" ? "bg-active"
+    : tone === "break" ? "bg-brk"
+    : "bg-slate-500";
   const padding = size === "mini" ? "px-3 py-2 pl-3.5" : "px-3 py-2.5 pl-3.5";
   return (
     <div

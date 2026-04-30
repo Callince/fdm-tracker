@@ -3,6 +3,7 @@ import { differenceInMinutes, parseISO } from "date-fns";
 import { ExternalLink, Users, Video } from "lucide-react";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { PageHeader } from "@/components/PageHeader";
+import { Empty, EmptyMeeting } from "@/components/Empty";
 
 interface Meeting {
   id: string;
@@ -94,26 +95,26 @@ export function MeetingsPage() {
       <Section
         title="Live now"
         meetings={live}
-        emptyText="No meetings happening right now."
+        emptyTitle="Nothing live right now"
+        emptyDescription="When a meeting is in progress, it shows up here with a join button."
         accent="emerald"
       />
 
       <Section
         title="Upcoming"
         meetings={upcoming}
-        emptyText="No upcoming meetings in the next 30 days."
+        emptyTitle="No upcoming meetings"
+        emptyDescription="New invites from your admin will appear here automatically."
       />
 
       <Section
         title="Past"
         meetings={past}
-        emptyText="No past meetings yet."
+        emptyTitle="No past meetings yet"
+        emptyDescription="Once a meeting wraps, you'll see it here for reference."
         muted
       />
 
-      {loading && (
-        <div className="text-xs text-slate-400 dark:text-slate-500 text-center">Loading…</div>
-      )}
     </div>
   );
 }
@@ -121,13 +122,15 @@ export function MeetingsPage() {
 function Section({
   title,
   meetings,
-  emptyText,
+  emptyTitle,
+  emptyDescription,
   accent,
   muted,
 }: {
   title: string;
   meetings: Meeting[];
-  emptyText: string;
+  emptyTitle: string;
+  emptyDescription?: string;
   accent?: "emerald";
   muted?: boolean;
 }) {
@@ -150,7 +153,7 @@ function Section({
       </CardHeader>
       <CardBody>
         {meetings.length === 0 ? (
-          <div className="text-sm text-slate-500 dark:text-slate-400 py-2">{emptyText}</div>
+          <Empty icon={EmptyMeeting} title={emptyTitle} description={emptyDescription} />
         ) : (
           <ul className={`divide-y divide-slate-100 dark:divide-slate-800 -my-2 ${muted ? "opacity-80" : ""}`}>
             {meetings.map((m) => (

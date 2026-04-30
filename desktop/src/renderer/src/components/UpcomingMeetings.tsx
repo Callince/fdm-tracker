@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { differenceInMinutes, parseISO } from "date-fns";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
+import { Skeleton } from "@/components/Skeleton";
+import { Empty, EmptyMeeting } from "@/components/Empty";
 
 interface Meeting {
   id: string;
@@ -95,11 +97,25 @@ export function UpcomingMeetings() {
         </div>
       </CardHeader>
       <CardBody>
-        {!loaded && <div className="text-sm text-slate-500">Loading…</div>}
-        {loaded && visible.length === 0 && (
-          <div className="text-sm text-slate-500 dark:text-slate-400 py-2">
-            No meetings left for today.
+        {!loaded && (
+          <div className="space-y-2 py-1">
+            {Array.from({ length: 2 }).map((_, i) => (
+              <div key={i} className="flex items-start gap-3 py-2">
+                <Skeleton className="h-2 w-2 rounded-full mt-1.5" />
+                <div className="flex-1 space-y-1.5">
+                  <Skeleton className="h-3 w-1/2" />
+                  <Skeleton className="h-2 w-3/4" />
+                </div>
+              </div>
+            ))}
           </div>
+        )}
+        {loaded && visible.length === 0 && (
+          <Empty
+            icon={EmptyMeeting}
+            title="No meetings left for today"
+            description="Upcoming meetings appear here. Check the Meetings tab for past + future."
+          />
         )}
         {visible.length > 0 && (
           <ul className="divide-y divide-slate-100 dark:divide-slate-800 -my-2">
