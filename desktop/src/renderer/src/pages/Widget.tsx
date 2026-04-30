@@ -1,13 +1,5 @@
 import { useEffect, useState } from "react";
-import {
-  ChevronDown,
-  ChevronUp,
-  GripHorizontal,
-  Pause,
-  Play,
-  Square,
-  X,
-} from "lucide-react";
+import { Maximize2, Minimize2, Pause, Play, Square, X } from "lucide-react";
 import type { AppStatus } from "@shared/types";
 import { LiveTimer } from "@/components/LiveTimer";
 import { hms } from "@/lib/format";
@@ -15,38 +7,22 @@ import { useAppStatus } from "@/lib/status";
 
 const SIZE_KEY = "fdm.widget.size";
 type WidgetSize = "mini" | "normal" | "max";
+type Tone = "active" | "break" | "idle";
 
-/**
- * Floating widget. Three sizes; brand-tinted state-aware look.
- *
- * Resting bg is translucent (slate-900/30). On hover the entire shell
- * goes solid dark + slightly tinted toward the current state so the
- * controls are crisp while interacting and immediately readable.
- */
 export function Widget() {
   const status = useAppStatus();
-  if (!status) {
-    return (
-      <Shell tone="idle">
-        <div className="text-[11px] text-slate-300">Loading…</div>
-      </Shell>
-    );
-  }
-
+  if (!status) return <Shell tone="idle"><div className="text-[11px] text-slate-300 px-2">Loading…</div></Shell>;
   if (!status.signed_in) {
     return (
       <Shell tone="idle">
-        <div className="text-[11px] text-slate-300">
+        <div className="text-[11px] text-slate-300 px-2 leading-tight">
           Sign in on the main window to track time.
         </div>
       </Shell>
     );
   }
-
   return <WidgetBody status={status} />;
 }
-
-type Tone = "active" | "break" | "idle";
 
 function tone(status: AppStatus): Tone {
   if (!status.session_active) return "idle";
@@ -84,41 +60,35 @@ function WidgetBody({ status }: { status: AppStatus }) {
     }
   }
 
-  const t: Tone = tone(status);
+  const t = tone(status);
   const timerStart = status.session_active
     ? status.on_break && status.break_started_at
       ? status.break_started_at
       : status.session_started_at
     : null;
-  const stateLabel = !status.session_active
-    ? "Not tracking"
-    : status.on_break
-      ? "On break"
-      : "Working";
+  const stateLabel = !status.session_active ? "Off" : status.on_break ? "Break" : "Working";
 
-  // Today's % progress for the bottom progress strip.
   const target = status.profile?.target_hours_per_day ?? 8;
   const targetSec = target * 3600;
   const loggedSec =
     status.today_active_seconds + status.today_idle_seconds + status.today_break_seconds;
   const pct = targetSec > 0 ? Math.min(100, Math.round((loggedSec / targetSec) * 100)) : 0;
 
-  // -- MINI view -- single row, ultra compact ------------------------------
   if (size === "mini") {
     return (
       <Shell tone={t} size={size} onSize={changeSize}>
-        <div className="flex items-center gap-2 px-1">
+        <div className="flex items-center gap-2 h-full">
           <StateDot tone={t} />
           {timerStart ? (
             <LiveTimer
               startedAt={timerStart}
               pausedSince={null}
-              className={`text-base font-semibold tabular-nums ${timerColor(t)}`}
+              className={`text-[15px] font-semibold tabular-nums ${timerColor(t)}`}
             />
           ) : (
-            <span className="text-base font-semibold tabular-nums text-slate-400">0:00:00</span>
+            <span className="text-[15px] font-semibold tabular-nums text-slate-400">0:00:00</span>
           )}
-          <span className="ml-auto text-[10px] uppercase tracking-widest text-slate-300/70">
+          <span className="ml-auto text-[9px] uppercase tracking-widest text-slate-400">
             {stateLabel}
           </span>
         </div>
@@ -126,128 +96,78 @@ function WidgetBody({ status }: { status: AppStatus }) {
     );
   }
 
-  // -- NORMAL + MAX view ---------------------------------------------------
   return (
     <Shell tone={t} size={size} onSize={changeSize}>
-      {/* State strip */}
-      <div className="flex items-center gap-2 px-1">
+      <div className="flex items-center gap-2 mb-1.5">
         <StateDot tone={t} />
         <span className="text-[10px] uppercase tracking-widest font-semibold text-slate-200">
           {stateLabel}
         </span>
         {timerStart && (
-          <span className="ml-auto text-[10px] text-slate-400">
+          <span className="ml-auto text-[10px] text-slate-500 tabular-nums">
             since {formatStartTime(timerStart)}
           </span>
         )}
       </div>
 
-      {/* Timer */}
-      <div className="px-1 mt-2">
+      <div className="flex items-baseline gap-2">
         {timerStart ? (
           <LiveTimer
             startedAt={timerStart}
             pausedSince={null}
-            className={`text-3xl font-semibold tabular-nums leading-none ${timerColor(t)}`}
+            className={`text-[28px] font-semibold tabular-nums leading-none ${timerColor(t)}`}
           />
         ) : (
-          <span className="text-3xl font-semibold tabular-nums leading-none text-slate-400">
+          <span className="text-[28px] font-semibold tabular-nums leading-none text-slate-400">
             0:00:00
           </span>
         )}
       </div>
 
-      {/* Actions */}
-      <div className="mt-3 flex gap-2 no-drag" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
+      <div className="mt-2 flex gap-1.5 no-drag" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
         {!status.session_active && (
-          <PrimaryAction
-            tone="active"
-            icon={<Play size={13} />}
-            label={busy === "start" ? "Starting…" : "Start work"}
-            disabled={busy !== null}
-            onClick={() => act("start")}
-            fullWidth
-          />
+          <Btn tone="active" icon={<Play size={12} />} label="Start" disabled={busy !== null} fullWidth onClick={() => act("start")} />
         )}
         {status.session_active && !status.on_break && (
           <>
-            <PrimaryAction
-              tone="break"
-              icon={<Pause size={13} />}
-              label={busy === "break" ? "…" : "Break"}
-              disabled={busy !== null}
-              onClick={() => act("break")}
-            />
-            <PrimaryAction
-              tone="end"
-              icon={<Square size={11} />}
-              label={busy === "end" ? "…" : "End"}
-              disabled={busy !== null}
-              onClick={() => act("end")}
-            />
+            <Btn tone="break" icon={<Pause size={12} />} label="Break" disabled={busy !== null} onClick={() => act("break")} />
+            <Btn tone="end" icon={<Square size={10} />} label="End" disabled={busy !== null} onClick={() => act("end")} />
           </>
         )}
         {status.session_active && status.on_break && (
           <>
-            <PrimaryAction
-              tone="active"
-              icon={<Play size={13} />}
-              label={busy === "resume" ? "…" : "Resume"}
-              disabled={busy !== null}
-              onClick={() => act("resume")}
-            />
-            <PrimaryAction
-              tone="end"
-              icon={<Square size={11} />}
-              label={busy === "end" ? "…" : "End"}
-              disabled={busy !== null}
-              onClick={() => act("end")}
-            />
+            <Btn tone="active" icon={<Play size={12} />} label="Resume" disabled={busy !== null} onClick={() => act("resume")} />
+            <Btn tone="end" icon={<Square size={10} />} label="End" disabled={busy !== null} onClick={() => act("end")} />
           </>
         )}
       </div>
 
-      {/* Today progress bar — always shown in normal + max */}
-      <div className="mt-3 px-1">
-        <div className="flex items-center justify-between text-[10px] mb-1">
-          <span className="text-slate-400">Today</span>
-          <span className="text-slate-300 tabular-nums">
-            {hms(loggedSec)} / {target}h · {pct}%
-          </span>
-        </div>
-        <div className="h-1 rounded bg-white/10 overflow-hidden flex">
+      <div className="mt-2">
+        <div className="h-[3px] rounded-full bg-white/10 overflow-hidden flex">
           {targetSec > 0 && (
             <>
-              <div
-                className="h-full bg-active transition-all"
-                style={{ width: `${Math.min(100, (status.today_active_seconds / targetSec) * 100)}%` }}
-              />
-              <div
-                className="h-full bg-idle transition-all"
-                style={{ width: `${Math.min(100, (status.today_idle_seconds / targetSec) * 100)}%` }}
-              />
-              <div
-                className="h-full bg-brk transition-all"
-                style={{ width: `${Math.min(100, (status.today_break_seconds / targetSec) * 100)}%` }}
-              />
+              <div className="h-full bg-active" style={{ width: `${(status.today_active_seconds / targetSec) * 100}%` }} />
+              <div className="h-full bg-idle" style={{ width: `${(status.today_idle_seconds / targetSec) * 100}%` }} />
+              <div className="h-full bg-brk" style={{ width: `${(status.today_break_seconds / targetSec) * 100}%` }} />
             </>
           )}
         </div>
+        <div className="mt-1 flex items-center justify-between text-[9px] tabular-nums">
+          <span className="text-slate-500">Today</span>
+          <span className="text-slate-300">{hms(loggedSec)} / {target}h · {pct}%</span>
+        </div>
       </div>
 
-      {/* MAX-only: today totals */}
       {size === "max" && (
-        <div className="mt-3 grid grid-cols-3 gap-1.5 text-[10px]">
-          <Stat label="Active" value={hms(status.today_active_seconds)} colorClass="text-active" />
-          <Stat label="Idle" value={hms(status.today_idle_seconds)} colorClass="text-idle" />
-          <Stat label="Break" value={hms(status.today_break_seconds)} colorClass="text-brk" />
+        <div className="mt-2 grid grid-cols-3 gap-1 text-[9px]">
+          <Chip label="Active" value={hms(status.today_active_seconds)} colorClass="text-active" />
+          <Chip label="Idle"   value={hms(status.today_idle_seconds)}   colorClass="text-idle" />
+          <Chip label="Break"  value={hms(status.today_break_seconds)}  colorClass="text-brk" />
         </div>
       )}
     </Shell>
   );
 }
-
-// ---- helpers -------------------------------------------------------------
 
 function timerColor(t: Tone): string {
   if (t === "active") return "text-active";
@@ -257,18 +177,14 @@ function timerColor(t: Tone): string {
 
 function StateDot({ tone }: { tone: Tone }) {
   const cls =
-    tone === "active"
-      ? "bg-active"
-      : tone === "break"
-        ? "bg-brk"
-        : "bg-slate-500";
+    tone === "active" ? "bg-active" :
+    tone === "break" ? "bg-brk" :
+    "bg-slate-500";
   return (
     <span className="relative inline-flex h-2 w-2 shrink-0">
-      <span
-        className={`absolute inset-0 rounded-full ${cls} ${
-          tone !== "idle" ? "animate-ping opacity-50" : ""
-        }`}
-      />
+      {tone !== "idle" && (
+        <span className={`absolute inset-0 rounded-full ${cls} opacity-50 animate-ping`} />
+      )}
       <span className={`relative inline-flex h-2 w-2 rounded-full ${cls}`} />
     </span>
   );
@@ -279,11 +195,11 @@ function formatStartTime(iso: string): string {
   return `${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}`;
 }
 
-function Stat({ label, value, colorClass }: { label: string; value: string; colorClass: string }) {
+function Chip({ label, value, colorClass }: { label: string; value: string; colorClass: string }) {
   return (
-    <div className="rounded-md bg-white/5 px-1.5 py-1.5 border border-white/5">
-      <div className="text-[9px] uppercase tracking-wider text-slate-400">{label}</div>
-      <div className={`tabular-nums font-medium ${colorClass}`}>{value}</div>
+    <div className="rounded bg-white/[0.04] border border-white/5 px-1.5 py-1">
+      <div className="text-[8px] uppercase tracking-wider text-slate-500">{label}</div>
+      <div className={`tabular-nums font-medium leading-tight ${colorClass}`}>{value}</div>
     </div>
   );
 }
@@ -299,78 +215,45 @@ function Shell({
   size?: WidgetSize;
   onSize?: (s: WidgetSize) => void;
 }) {
-  // Resting: very translucent dark. Hover: solid dark + a faint state tint
-  // along the top edge (subtle gradient so the widget identifies its mode
-  // at a glance without being noisy).
-  const hoverTint =
-    tone === "active"
-      ? "hover:bg-gradient-to-b hover:from-active/15 hover:via-slate-900 hover:to-slate-900"
-      : tone === "break"
-        ? "hover:bg-gradient-to-b hover:from-brk/15 hover:via-slate-900 hover:to-slate-900"
-        : "hover:bg-slate-900";
-
+  const edgeColor = tone === "active" ? "bg-active" : tone === "break" ? "bg-brk" : "bg-slate-500";
+  const padding = size === "mini" ? "px-3 py-2 pl-3.5" : "px-3 py-2.5 pl-3.5";
   return (
     <div
-      className={`group h-full w-full p-3 rounded-xl bg-slate-900/30 ${hoverTint} text-slate-100 shadow-lg border border-white/10 backdrop-blur-md select-none transition-colors`}
+      className="group relative h-full w-full rounded-lg bg-slate-900/35 hover:bg-slate-950/95 text-slate-100 shadow-md border border-white/10 backdrop-blur-md select-none transition-colors overflow-hidden"
       style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
     >
-      {/* Header / chrome */}
-      <div className="flex items-center justify-between mb-1">
-        <GripHorizontal size={12} className="text-slate-400/60" />
+      <span className={`absolute left-0 top-0 h-full w-[3px] ${edgeColor}`} />
+      {onSize && (
         <div
-          className="flex items-center gap-0.5 no-drag"
+          className="absolute top-1 right-1 flex items-center gap-0.5 no-drag opacity-0 group-hover:opacity-100 transition-opacity"
           style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
         >
-          {onSize && size !== "max" && (
-            <button
-              type="button"
-              onClick={() => onSize(size === "mini" ? "normal" : "max")}
-              className="rounded p-0.5 text-slate-300 hover:text-white hover:bg-white/10"
-              title={size === "mini" ? "Restore" : "Maximize"}
-              aria-label={size === "mini" ? "Restore" : "Maximize"}
-            >
-              <ChevronUp size={12} />
+          {size === "max" ? (
+            <button type="button" onClick={() => onSize("normal")} className="rounded p-0.5 text-slate-300 hover:text-white hover:bg-white/10" title="Restore" aria-label="Restore">
+              <Minimize2 size={11} />
+            </button>
+          ) : (
+            <button type="button" onClick={() => onSize(size === "mini" ? "normal" : "max")} className="rounded p-0.5 text-slate-300 hover:text-white hover:bg-white/10" title="Maximize" aria-label="Maximize">
+              <Maximize2 size={11} />
             </button>
           )}
-          {onSize && size !== "mini" && (
-            <button
-              type="button"
-              onClick={() => onSize(size === "max" ? "normal" : "mini")}
-              className="rounded p-0.5 text-slate-300 hover:text-white hover:bg-white/10"
-              title={size === "max" ? "Restore" : "Minimize"}
-              aria-label={size === "max" ? "Restore" : "Minimize"}
-            >
-              <ChevronDown size={12} />
+          {size !== "mini" && (
+            <button type="button" onClick={() => onSize("mini")} className="rounded p-0.5 text-slate-300 hover:text-white hover:bg-white/10" title="Minimize" aria-label="Minimize">
+              <Minimize2 size={11} />
             </button>
           )}
-          <button
-            type="button"
-            onClick={() => { void window.fdm.hideWidget(); }}
-            className="rounded p-0.5 text-slate-300 hover:text-white hover:bg-white/10"
-            title="Hide widget"
-            aria-label="Hide widget"
-          >
-            <X size={12} />
+          <button type="button" onClick={() => { void window.fdm.hideWidget(); }} className="rounded p-0.5 text-slate-300 hover:text-white hover:bg-white/10" title="Hide" aria-label="Hide widget">
+            <X size={11} />
           </button>
         </div>
-      </div>
-      <div
-        className="no-drag"
-        style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
-      >
-        {children}
-      </div>
+      )}
+      <div className={`relative h-full ${padding}`}>{children}</div>
     </div>
   );
 }
 
-function PrimaryAction({
-  tone,
-  icon,
-  label,
-  onClick,
-  disabled,
-  fullWidth,
+function Btn({
+  tone, icon, label, onClick, disabled, fullWidth,
 }: {
   tone: "active" | "break" | "end";
   icon: React.ReactNode;
@@ -380,21 +263,18 @@ function PrimaryAction({
   fullWidth?: boolean;
 }) {
   const cls =
-    tone === "active"
-      ? "bg-active hover:brightness-110 text-white"
-      : tone === "break"
-        ? "bg-brk hover:brightness-110 text-white"
-        : "bg-red-600 hover:brightness-110 text-white";
+    tone === "active" ? "bg-active hover:brightness-110 text-white" :
+    tone === "break"  ? "bg-brk hover:brightness-110 text-white" :
+                        "bg-red-600 hover:brightness-110 text-white";
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
       style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
-      className={`${fullWidth ? "flex-1" : "flex-1"} h-9 rounded-md text-xs font-semibold inline-flex items-center justify-center gap-1.5 ${cls} disabled:opacity-60 transition`}
+      className={`${fullWidth ? "flex-1" : "flex-1"} h-7 rounded text-[11px] font-semibold inline-flex items-center justify-center gap-1 ${cls} disabled:opacity-60 transition`}
     >
-      {icon}
-      <span>{label}</span>
+      {icon}<span>{label}</span>
     </button>
   );
 }

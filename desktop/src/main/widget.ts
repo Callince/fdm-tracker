@@ -17,14 +17,14 @@ const widgetStore = new Store<{ pos: WidgetState }>({
 
 let widgetWin: BrowserWindow | null = null;
 
-const WIDGET_WIDTH = 280;
-// Three sizes:
-// - mini (single row): status dot + timer + state label
-// - normal: full state strip + timer + actions + today progress bar
-// - max: above + Active/Idle/Break stat chips
-const WIDGET_HEIGHT_MINI = 56;
-const WIDGET_HEIGHT_NORMAL = 190;
-const WIDGET_HEIGHT_MAX = 258;
+const WIDGET_WIDTH = 250;
+// Three sizes — kept tight; no wasted padding inside.
+//   mini: dot + timer + state label, single row
+//   normal: state pill + timer + actions + thin progress bar
+//   max: above + 3 colored chips
+const WIDGET_HEIGHT_MINI = 44;
+const WIDGET_HEIGHT_NORMAL = 138;
+const WIDGET_HEIGHT_MAX = 192;
 const MARGIN = 24;
 
 export type WidgetSize = "mini" | "normal" | "max";
