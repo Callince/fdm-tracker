@@ -17,6 +17,7 @@ declare global {
       from_date: string; to_date: string;
       total_active_seconds: number; total_idle_seconds: number; total_break_seconds: number;
       days_counted: number; target_hours_per_day: number;
+      working_days: number; holiday_count: number;
     }>;
 
     login: (email: string, password: string) => Promise<LoginResult>;

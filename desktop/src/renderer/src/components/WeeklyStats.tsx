@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { addDays, format, parseISO } from "date-fns";
 import { hms } from "@/lib/format";
+import { Skeleton } from "@/components/Skeleton";
 import type { DailySummary } from "@shared/types";
 
 export function WeeklyStats() {
@@ -28,7 +29,24 @@ export function WeeklyStats() {
     return { totalActive, maxActive, bars };
   }, [days]);
 
-  if (loading) return <div className="text-xs text-slate-500 dark:text-slate-400">Loading…</div>;
+  if (loading) {
+    return (
+      <div className="space-y-2">
+        <div className="flex items-baseline justify-between">
+          <Skeleton className="h-4 w-20" />
+          <Skeleton className="h-3 w-24" />
+        </div>
+        <div className="flex items-end gap-2 h-16">
+          {Array.from({ length: 7 }).map((_, i) => (
+            <div key={i} className="flex-1 flex flex-col items-center gap-1">
+              <Skeleton className="w-full" style={{ height: `${20 + Math.random() * 60}%` } as React.CSSProperties} />
+              <Skeleton className="h-2 w-2" />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-2">

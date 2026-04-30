@@ -117,7 +117,7 @@ export function CalendarGrid({ month, days, onSelect, selected, holidays = [] }:
               tabIndex={isSel ? 0 : -1}
               role="gridcell"
               aria-selected={isSel}
-              className={`h-16 rounded border text-left p-2 transition focus:outline-none focus:ring-2 focus:ring-brand/60 ${
+              className={`h-16 lg:h-20 xl:h-24 rounded border text-left p-2 transition focus:outline-none focus:ring-2 focus:ring-brand/60 ${
                 isSel
                   ? "border-brand dark:border-brand"
                   : off
