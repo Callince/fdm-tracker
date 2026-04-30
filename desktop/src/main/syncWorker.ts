@@ -39,17 +39,40 @@ function emitStatus(online: boolean) {
 
 function closeBucket(now: number) {
   if (!currentSessionId || bucketStart === 0) return;
-  const elapsed = Math.min(config.bucketSeconds, Math.round((now - bucketStart) / 1000));
-  if (elapsed <= 0) return;
+  const totalElapsed = Math.round((now - bucketStart) / 1000);
+  if (totalElapsed <= 0) return;
   const counts = inputCounter.drain();
+  // First bucket — gets any tracked active/idle + the input counts.
+  const firstSize = Math.min(config.bucketSeconds, totalElapsed);
+  const firstActive = Math.min(activeAccum, firstSize);
+  const firstIdle = Math.max(0, firstSize - firstActive);
   localDb.insertBucket({
     session_id: currentSessionId,
     bucket_start: new Date(bucketStart).toISOString(),
-    active_seconds: Math.min(activeAccum, elapsed),
-    idle_seconds: Math.min(idleAccum, elapsed),
+    active_seconds: firstActive,
+    idle_seconds: firstIdle,
     keystroke_count: counts.keystrokes,
     mouse_event_count: counts.mouseEvents,
   });
+  // Backfill any remaining time as idle-only 60s buckets. This covers
+  // sleep / lid-close / lock-screen gaps that span more than a single
+  // 60s bucket — without this, a 2-hour nap would collapse into a
+  // single 60s bucket and the timeline would have an empty stretch.
+  let cursor = bucketStart + firstSize * 1000;
+  let remaining = totalElapsed - firstSize;
+  while (remaining > 0) {
+    const seconds = Math.min(config.bucketSeconds, remaining);
+    localDb.insertBucket({
+      session_id: currentSessionId,
+      bucket_start: new Date(cursor).toISOString(),
+      active_seconds: 0,
+      idle_seconds: seconds,
+      keystroke_count: 0,
+      mouse_event_count: 0,
+    });
+    cursor += seconds * 1000;
+    remaining -= seconds;
+  }
   // advance the window; carry no residual
   bucketStart = now;
   activeAccum = 0;

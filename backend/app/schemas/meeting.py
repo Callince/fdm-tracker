@@ -64,12 +64,8 @@ class MeetingUpdate(BaseModel):
     duration_minutes: Optional[int] = Field(default=None, ge=1, le=1440)
     user_ids: Optional[List[uuid.UUID]] = None
 
-    @field_validator("scheduled_at")
-    @classmethod
-    def _validate_scheduled_at(cls, v: Optional[datetime]) -> Optional[datetime]:
-        if v is None:
-            return v
-        return _ensure_future(v)
+    # Admin may edit a meeting's time freely (e.g. fix a typo on a meeting
+    # that's already started). Past times are only blocked on create.
 
     @field_validator("meeting_link")
     @classmethod
