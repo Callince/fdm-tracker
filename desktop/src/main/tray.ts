@@ -31,7 +31,7 @@ function trayIcon() {
     if (!probe.isEmpty()) { img = probe; break; }
   }
   if (img.isEmpty()) return nativeImage.createEmpty();
-  return img.resize({ width: 16, height: 16 });
+  return img.resize({ width: 16, height: 16, quality: "best" });
 }
 
 export function ensureTray(handlers: TrayHandlers) {

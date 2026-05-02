@@ -53,24 +53,14 @@ export function AppShell({ status, active, onNavigate, onLogout, children }: Pro
         {/* Vertical brand accent on the very left edge */}
         <span className="absolute left-0 top-0 h-full w-[3px] bg-gradient-to-b from-brand to-brand-dark" aria-hidden />
 
-        {/* Brand */}
-        <div className="shrink-0 px-4 py-4 flex items-center gap-3 border-b border-slate-100 dark:border-slate-800 pl-5">
-          <div className="h-9 w-9 rounded-lg bg-gradient-to-br from-brand to-brand-dark flex items-center justify-center shrink-0 shadow-md ring-1 ring-white/20 text-white">
-            <svg viewBox="0 0 32 32" width={20} height={20} aria-hidden>
-              <path
-                fill="currentColor"
-                d="M18 4v14h4v4h-4v6h-4v-6H2v-3L17 4h1Zm-4 6L6 18h8v-8Z"
-              />
-            </svg>
-          </div>
-          <div className="min-w-0">
-            <div className="text-[13px] font-semibold tracking-tight text-slate-900 dark:text-slate-100">
-              FDM Tracker
-            </div>
-            <div className="text-[10px] text-slate-500 dark:text-slate-400 uppercase tracking-widest">
-              Fourth Dimension
-            </div>
-          </div>
+        {/* Brand — Fourth Dimension wordmark on its native brand-orange tile */}
+        <div className="shrink-0 border-b border-slate-100 dark:border-slate-800 pl-1 pr-3 py-3">
+          <img
+            src="./4d-logo.webp"
+            alt="Fourth Dimension"
+            draggable={false}
+            className="block w-full h-auto rounded-md select-none"
+          />
         </div>
 
         {/* Live status card */}
