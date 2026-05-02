@@ -12,6 +12,12 @@ files:
   - "!**/test/**"
   - "!**/tests/**"
   - "!**/__tests__/**"
+# Ship the brand icon at runtime so the tray, dock, and notification
+# windows can load it via process.resourcesPath/icon.png. Without this
+# the tray ends up with an empty nativeImage and looks invisible.
+extraResources:
+  - from: resources/icon.png
+    to: icon.png
 asar: true
 asarUnpack:
   - "**/*.node"
