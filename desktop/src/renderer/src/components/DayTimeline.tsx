@@ -103,6 +103,64 @@ function collapseBuckets(detail: DayDetail): Range[] {
   out.push(...breaks);
   out.sort((a, b) => a.start.getTime() - b.start.getTime());
 
+  // Fill bucket gaps inside an active session with idle so the time stays
+  // accountable. Without this, a 2-minute hiccup (process restart, brief
+  // network outage, suspend without sleep-fill) silently disappears from
+  // the timeline because the coalesce tolerance is only 90s. A "gap inside
+  // a session that isn't a break" is treated as idle — we can't prove the
+  // user was active, so idle is the safe accounting.
+  const sessionRanges: { start: Date; end: Date }[] = [];
+  for (const s of detail.sessions) {
+    if (!s.ended_at) continue;
+    sessionRanges.push({ start: parseISO(s.started_at), end: parseISO(s.ended_at) });
+  }
+  const fills: Range[] = [];
+  for (const sess of sessionRanges) {
+    let cursor = sess.start;
+    const inSession = out
+      .filter((r) => r.start.getTime() < sess.end.getTime() && r.end.getTime() > sess.start.getTime())
+      .sort((a, b) => a.start.getTime() - b.start.getTime());
+    for (const r of inSession) {
+      if (cursor.getTime() < r.start.getTime()) {
+        const gapStart = cursor;
+        const gapEnd = new Date(Math.min(r.start.getTime(), sess.end.getTime()));
+        const overlapsBreak = breaks.some(
+          (b) => b.start.getTime() < gapEnd.getTime() && b.end.getTime() > gapStart.getTime(),
+        );
+        if (!overlapsBreak && gapEnd.getTime() - gapStart.getTime() >= 1000) {
+          fills.push({ start: gapStart, end: gapEnd, kind: "idle" });
+        }
+      }
+      if (r.end.getTime() > cursor.getTime()) cursor = r.end;
+    }
+    if (cursor.getTime() < sess.end.getTime()) {
+      const gapStart = cursor;
+      const gapEnd = sess.end;
+      const overlapsBreak = breaks.some(
+        (b) => b.start.getTime() < gapEnd.getTime() && b.end.getTime() > gapStart.getTime(),
+      );
+      if (!overlapsBreak && gapEnd.getTime() - gapStart.getTime() >= 1000) {
+        fills.push({ start: gapStart, end: gapEnd, kind: "idle" });
+      }
+    }
+  }
+  if (fills.length > 0) {
+    out.push(...fills);
+    out.sort((a, b) => a.start.getTime() - b.start.getTime());
+    // Merge adjacent same-kind ranges (a fill may butt up against an
+    // existing idle range, e.g., the user was idle for 4 min but only the
+    // last 2 min produced a real idle bucket).
+    for (let i = 1; i < out.length; i++) {
+      const prev = out[i - 1];
+      const cur = out[i];
+      if (prev.kind === cur.kind && cur.start.getTime() - prev.end.getTime() <= 1000) {
+        prev.end = cur.end > prev.end ? cur.end : prev.end;
+        out.splice(i, 1);
+        i--;
+      }
+    }
+  }
+
   // Final dedupe: if any range overlaps the previous one (can happen when a
   // sleep-fill synthetic bucket runs into a real bucket), truncate the
   // later one's start so the timeline is strictly non-overlapping.
