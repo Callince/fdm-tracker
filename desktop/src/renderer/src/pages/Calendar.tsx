@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { addMonths, endOfMonth, format, startOfMonth, subMonths } from "date-fns";
-import type { DailySummary, DayDetail } from "@shared/types";
+import type { DailySummary, DayDetail, Holiday } from "@shared/types";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { CalendarGrid } from "@/components/CalendarGrid";
@@ -13,7 +13,7 @@ export function CalendarPage() {
   const [month, setMonth] = useState(() => startOfMonth(new Date()));
   const [day, setDay] = useState<Date>(() => new Date());
   const [days, setDays] = useState<DailySummary[]>([]);
-  const [holidays, setHolidays] = useState<{ id: string; date: string; name: string; kind: "holiday" | "working" }[]>([]);
+  const [holidays, setHolidays] = useState<Holiday[]>([]);
   const [detail, setDetail] = useState<DayDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);

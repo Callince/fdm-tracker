@@ -113,3 +113,12 @@ export interface DailySummaryList {
   timezone: string;
   days: DailySummary[];
 }
+
+export type HolidayKind = "holiday" | "working";
+
+export interface Holiday {
+  id: string;
+  date: string;        // YYYY-MM-DD
+  name: string;
+  kind: HolidayKind;
+}

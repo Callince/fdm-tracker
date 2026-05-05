@@ -1,13 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
 import { addDays, format, isSameMonth, startOfMonth, startOfWeek } from "date-fns";
-import type { DailySummary } from "@shared/types";
-
-interface Holiday {
-  id: string;
-  date: string;       // YYYY-MM-DD
-  name: string;
-  kind: "holiday" | "working";
-}
+import type { DailySummary, Holiday } from "@shared/types";
 
 interface Props {
   month: Date;

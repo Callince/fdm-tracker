@@ -61,6 +61,12 @@ export default function UserDetailPage() {
     enabled: !!userQ.data,
   });
 
+  const holidaysQ = useQuery({
+    queryKey: ["admin", "holidays"],
+    queryFn: () => api.listHolidays(),
+    staleTime: 5 * 60_000,
+  });
+
   if (userQ.isLoading) return <div className="text-sm text-slate-500 dark:text-slate-400">Loading…</div>;
   if (!userQ.data) return <div className="text-sm text-red-600 dark:text-red-400">User not found.</div>;
   const u = userQ.data;
@@ -123,6 +129,7 @@ export default function UserDetailPage() {
                 <CalendarGrid
                   month={month}
                   days={summaryQ.data?.days ?? []}
+                  holidays={holidaysQ.data?.holidays ?? []}
                   selected={day}
                   onSelect={(d) => { setDay(d); setTab("day"); }}
                 />
