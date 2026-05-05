@@ -9,7 +9,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import and_, select
 from sqlalchemy.orm import Session
 
@@ -60,17 +60,19 @@ def _resolve_attendees(db: Session, user_ids: list[uuid.UUID]) -> list[User]:
 
 @public_router.get("", response_model=MeetingList)
 def list_my_meetings(
-    current: CurrentUser, db: Annotated[Session, Depends(get_db)]
+    current: CurrentUser,
+    db: Annotated[Session, Depends(get_db)],
+    days: Annotated[int, Query(ge=1, le=180, description="Forward window in days")] = 30,
 ) -> MeetingList:
     """Upcoming + recently-started meetings the user is invited to.
 
     Returns broadcast meetings (no attendees) and meetings the user is in.
-    Window: 1h in the past to 30 days forward.
+    Window: 1h in the past to `days` (default 30, max 180) days forward.
     """
     user, _device_id = current
     now = datetime.now(timezone.utc)
     horizon_back = now - timedelta(hours=1)
-    horizon_forward = now + timedelta(days=30)
+    horizon_forward = now + timedelta(days=days)
 
     # Direct invites + broadcasts (meetings with no rows in meeting_attendees).
     invited_ids = select(meeting_attendees.c.meeting_id).where(

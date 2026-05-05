@@ -51,6 +51,29 @@ def admin_create_holiday(
     return _to_out(h)
 
 
+@admin_router.put("", response_model=HolidayOut)
+def admin_upsert_holiday(
+    body: HolidayCreate,
+    admin: AdminUser,
+    db: Annotated[Session, Depends(get_db)],
+) -> HolidayOut:
+    """Idempotent upsert by date — if a holiday exists for `body.date`, its
+    name + kind are replaced; otherwise a new row is created. Replaces the
+    delete-then-create round-trip the admin used to do (which could lose
+    a holiday if the network died between calls)."""
+    existing = db.execute(select(Holiday).where(Holiday.date == body.date)).scalar_one_or_none()
+    if existing is None:
+        h = Holiday(date=body.date, name=body.name.strip(), kind=body.kind)
+        db.add(h)
+    else:
+        existing.name = body.name.strip()
+        existing.kind = body.kind
+        h = existing
+    db.commit()
+    db.refresh(h)
+    return _to_out(h)
+
+
 @admin_router.delete("/{holiday_id}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
 def admin_delete_holiday(
     holiday_id: uuid.UUID,

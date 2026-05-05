@@ -26,13 +26,13 @@ const TeamTrendChart = dynamic(
 export default function DashboardPage() {
   const overviewQ = useQuery({
     queryKey: ["admin", "overview"],
-    queryFn: () => api.overview(),
+    queryFn: ({ signal }) => api.overview(signal),
     refetchInterval: 30_000,
   });
 
   const liveQ = useQuery({
     queryKey: ["admin", "live"],
-    queryFn: () => api.liveSnapshot(),
+    queryFn: ({ signal }) => api.liveSnapshot(signal),
     refetchInterval: 30_000,
   });
 
@@ -44,7 +44,7 @@ export default function DashboardPage() {
 
   const trendQ = useQuery({
     queryKey: ["admin", "team-trend", range.from, range.to],
-    queryFn: () => api.teamTrend(range.from, range.to),
+    queryFn: ({ signal }) => api.teamTrend(range.from, range.to, signal),
     refetchInterval: 60_000,
   });
 

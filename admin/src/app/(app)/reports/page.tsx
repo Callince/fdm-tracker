@@ -24,7 +24,7 @@ export default function ReportsPage() {
   const [err, setErr] = useState<string | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
 
-  const teamsQ = useQuery({ queryKey: ["admin", "teams"], queryFn: () => api.listTeams() });
+  const teamsQ = useQuery({ queryKey: ["admin", "teams"], queryFn: ({ signal }) => api.listTeams(signal) });
   const teamLabel = useMemo(() => {
     if (!teamId) return "All teams";
     const t = teamsQ.data?.teams.find((x) => x.id === teamId);

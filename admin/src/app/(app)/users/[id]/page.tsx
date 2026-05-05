@@ -40,7 +40,7 @@ export default function UserDetailPage() {
 
   const userQ = useQuery({
     queryKey: ["admin", "user", id],
-    queryFn: () => api.getUser(id),
+    queryFn: ({ signal }) => api.getUser(id, signal),
   });
 
   const monthRange = useMemo(() => {
@@ -55,19 +55,19 @@ export default function UserDetailPage() {
   // load with a valid id) all three queries now race and complete together.
   const summaryQ = useQuery({
     queryKey: ["admin", "user", id, "summary", monthRange.from, monthRange.to],
-    queryFn: () => api.userDailySummary(id, monthRange.from, monthRange.to),
+    queryFn: ({ signal }) => api.userDailySummary(id, monthRange.from, monthRange.to, signal),
     staleTime: 30_000,
   });
 
   const dayQ = useQuery({
     queryKey: ["admin", "user", id, "day", format(day, "yyyy-MM-dd")],
-    queryFn: () => api.userDayDetails(id, format(day, "yyyy-MM-dd")),
+    queryFn: ({ signal }) => api.userDayDetails(id, format(day, "yyyy-MM-dd"), signal),
     staleTime: 30_000,
   });
 
   const holidaysQ = useQuery({
     queryKey: ["admin", "holidays"],
-    queryFn: () => api.listHolidays(),
+    queryFn: ({ signal }) => api.listHolidays(signal),
     staleTime: 5 * 60_000,
   });
 

@@ -53,7 +53,7 @@ export default function MeetingsPage() {
   const qc = useQueryClient();
   const meetingsQ = useQuery({
     queryKey: ["admin", "meetings"],
-    queryFn: () => api.listMeetings(),
+    queryFn: ({ signal }) => api.listMeetings(signal),
   });
 
   // null editing = create mode; otherwise pre-fill for edit

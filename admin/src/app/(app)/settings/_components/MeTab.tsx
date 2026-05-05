@@ -10,7 +10,7 @@ import { TeamSelect } from "@/components/TeamSelect";
 
 export function MeTab() {
   const qc = useQueryClient();
-  const meQ = useQuery({ queryKey: ["me"], queryFn: () => api.getMe() });
+  const meQ = useQuery({ queryKey: ["me"], queryFn: ({ signal }) => api.getMe(signal) });
 
   const [name, setName] = useState("");
   const [position, setPosition] = useState("");
