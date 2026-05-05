@@ -36,6 +36,11 @@ function clampHours(v: unknown): number {
   return Math.min(HOURS_MAX, Math.max(HOURS_MIN, n));
 }
 
+function clampWorkdayStart(v: unknown): number {
+  const n = typeof v === "number" && Number.isFinite(v) ? v : 4;
+  return Math.min(23, Math.max(0, Math.floor(n)));
+}
+
 async function tryRefresh(): Promise<boolean> {
   const { refreshToken } = auth.get();
   if (!refreshToken) return false;
@@ -104,6 +109,7 @@ export const api = {
       user_id: string; name: string; role: "user" | "admin";
       timezone: string; idle_threshold_minutes: number;
       target_hours_per_day?: number;
+      workday_start_hour?: number;
       position?: string | null;
       team_id?: string | null;
       team_name?: string | null;
@@ -120,6 +126,7 @@ export const api = {
     });
     const idle = clampIdle(data.idle_threshold_minutes);
     const targetHours = clampHours(data.target_hours_per_day);
+    const workdayStart = clampWorkdayStart(data.workday_start_hour);
     auth.save({
       accessToken: data.tokens.access_token,
       refreshToken: data.tokens.refresh_token,
@@ -136,6 +143,7 @@ export const api = {
         timezone: data.timezone,
         idle_threshold_minutes: idle,
         target_hours_per_day: targetHours,
+        workday_start_hour: workdayStart,
       },
     });
     return {
@@ -145,6 +153,7 @@ export const api = {
       team_name: data.team_name ?? null,
       timezone: data.timezone, idle_threshold_minutes: idle,
       target_hours_per_day: targetHours,
+      workday_start_hour: workdayStart,
     };
   },
 

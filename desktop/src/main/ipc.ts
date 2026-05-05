@@ -55,10 +55,38 @@ function liveState(): AppStatus["live_state"] {
 }
 
 /**
+ * Compute the half-open [start, end) UTC window for the user's current
+ * "tracker day". A tracker day rolls over at `workday_start_hour` local
+ * time (default 04:00) — same boundary the backend uses for day_detail
+ * and daily_summary, so the desktop's "today" totals stay aligned with
+ * the calendar / timeline / weekly / monthly views.
+ *
+ * Without this, activity between midnight and 04:00 was being counted
+ * in two different "todays" (frontend = calendar day, server = tracker
+ * day), which caused the timeline to appear to be missing several hours
+ * compared to the dashboard sidebar.
+ */
+function trackerDayWindowUtc(tz: string, startHour: number): { start: string; end: string } {
+  const now = new Date();
+  const hourNow = parseInt(formatInTimeZone(now, tz, "H"), 10);
+  // If the local clock hasn't crossed `startHour` yet today, "today" in
+  // tracker terms started yesterday at `startHour`.
+  const offsetDays = hourNow < startHour ? -1 : 0;
+  const anchor = new Date(now.getTime() + offsetDays * 86_400_000);
+  const anchorDate = formatInTimeZone(anchor, tz, "yyyy-MM-dd");
+  const hh = startHour.toString().padStart(2, "0");
+  const start = fromZonedTime(`${anchorDate} ${hh}:00:00`, tz);
+  const end = new Date(start.getTime() + 86_400_000);
+  return { start: start.toISOString(), end: end.toISOString() };
+}
+
+/**
  * Compute today's totals from the most authoritative sources available:
  *   - active / idle: sum of all locally-stored buckets for today (synced
  *     + pending) + the in-progress bucket accumulator.
- *   - break: sum of break entries (closing an open break with `now`).
+ *   - break: sum of break entries (closing an open break with `now`),
+ *     filtered to the tracker-day window so an early-morning break from
+ *     yesterday doesn't double-count after midnight.
  *
  * This guarantees that
  *   today_active_seconds + today_idle_seconds + today_break_seconds
@@ -72,20 +100,24 @@ function computeTodayTotals(): { active: number; idle: number; brk: number } {
   const a = auth.get();
   if (!a.profile) return { active: 0, idle: 0, brk: 0 };
   const tz = a.profile.timezone;
+  const startHour = a.profile.workday_start_hour ?? 4;
   let active = 0;
   let idle = 0;
+  let windowStartMs = 0;
+  let windowEndMs = 0;
   try {
-    const localDate = formatInTimeZone(new Date(), tz, "yyyy-MM-dd");
-    const dayStart = fromZonedTime(`${localDate} 00:00:00`, tz).toISOString();
-    const dayEnd = fromZonedTime(`${localDate} 23:59:59.999`, tz).toISOString();
-    const flushed = localDb.todayBucketTotals(dayStart, dayEnd);
+    const win = trackerDayWindowUtc(tz, startHour);
+    windowStartMs = Date.parse(win.start);
+    windowEndMs = Date.parse(win.end);
+    const flushed = localDb.todayBucketTotals(win.start, win.end);
     const live = syncWorker.currentBucketAccum();
     active = flushed.active_seconds + Math.floor(live.active);
     idle = flushed.idle_seconds + Math.floor(live.idle);
   } catch {
     // localDb / tz issue — fall through with zeros so the UI doesn't crash.
   }
-  // Break time = sum over today's break entries; an open break uses `now`.
+  // Break time = sum over today's break entries clipped to the tracker-day
+  // window; an open break uses `now` (or the window end, whichever is sooner).
   const now = Date.now();
   let brk = 0;
   for (const e of todayEntries) {
@@ -94,7 +126,13 @@ function computeTodayTotals(): { active: number; idle: number; brk: number } {
     if (Number.isNaN(start)) continue;
     const end = e.ended_at ? Date.parse(e.ended_at) : now;
     if (Number.isNaN(end) || end <= start) continue;
-    brk += Math.floor((end - start) / 1000);
+    if (windowStartMs && windowEndMs) {
+      const clippedStart = Math.max(start, windowStartMs);
+      const clippedEnd = Math.min(end, windowEndMs);
+      if (clippedEnd > clippedStart) brk += Math.floor((clippedEnd - clippedStart) / 1000);
+    } else {
+      brk += Math.floor((end - start) / 1000);
+    }
   }
   return { active, idle, brk };
 }
@@ -151,7 +189,12 @@ async function refreshTodayTotals() {
   todayRefreshBusy = true;
   try {
     const tz = s.profile.timezone;
-    const localDate = formatInTimeZone(new Date(), tz, "yyyy-MM-dd");
+    // Use the *tracker-day* anchor date (rolls over at workday_start_hour)
+    // so the timeline view stays in sync with what the server considers
+    // "today" right after midnight up to 04:00 local.
+    const startHour = s.profile.workday_start_hour ?? 4;
+    const win = trackerDayWindowUtc(tz, startHour);
+    const localDate = formatInTimeZone(new Date(win.start), tz, "yyyy-MM-dd");
     // We still pull the server's day-detail for the timeline (sessions +
     // breaks list shown on the dashboard), but we no longer trust its
     // numeric totals — those are computed live in computeTodayTotals().
@@ -217,6 +260,9 @@ async function refreshProfile() {
       timezone: me.timezone,
       idle_threshold_minutes: cur?.idle_threshold_minutes ?? 5,
       target_hours_per_day: cur?.target_hours_per_day ?? 8,
+      // /me doesn't return workday_start_hour; preserve the value from the
+      // last login response, or fall back to the server default (04:00).
+      workday_start_hour: cur?.workday_start_hour ?? 4,
     });
     pushStatus();
   } catch {

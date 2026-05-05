@@ -12,6 +12,10 @@ export interface UserProfile {
   timezone: string;
   idle_threshold_minutes: number;
   target_hours_per_day: number;
+  /** Hour of day (0-23, local) that a tracker day rolls over. Default 4.
+   * Mirrors the server's workday_start_hour so the desktop's "today" totals
+   * align with the server's day_detail / daily_summary windows. */
+  workday_start_hour: number;
 }
 
 export interface TeamBrief {

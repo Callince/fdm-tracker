@@ -42,6 +42,10 @@ class LoginResponse(BaseModel):
     is_new_device: bool
     idle_threshold_minutes: int
     target_hours_per_day: int
+    # The hour-of-day (0-23, user's local tz) at which a "tracker day" rolls
+    # over. Defaults to 04:00 — the server's day_detail / daily_summary use
+    # this same boundary, so the desktop's "today" totals stay in sync.
+    workday_start_hour: int
 
 
 class RefreshRequest(BaseModel):
