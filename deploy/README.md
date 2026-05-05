@@ -6,7 +6,7 @@ One Docker Compose stack on a single droplet:
 - **admin** — Next.js standalone server on internal port 3000
 - **caddy** — reverse proxy with auto-HTTPS via Let's Encrypt
 
-The database is Neon (managed Postgres) — not run on the droplet.
+The database is Supabase (managed Postgres) — not run on the droplet.
 
 ---
 
@@ -16,7 +16,7 @@ The database is Neon (managed Postgres) — not run on the droplet.
 2. A domain you control (e.g. `fourdm.com`). Two A records pointing at the droplet IP:
    - `admin.fourdm.com` → droplet IP
    - `api.fourdm.com` → droplet IP
-3. Neon project ready (we already have one).
+3. Supabase project ready (we already have one).
 
 ---
 
@@ -57,7 +57,7 @@ Edit `.env`:
 
 - Set `ADMIN_DOMAIN` and `API_DOMAIN` to your real subdomains.
 - Set `NEXT_PUBLIC_API_BASE` to `https://<API_DOMAIN>` (must match exactly).
-- Paste the real Neon `DATABASE_URL` (the one we already wired locally).
+- Paste the real Supabase `DATABASE_URL` (the one we already wired locally).
 - Generate a real `JWT_SECRET`:
   ```bash
   openssl rand -hex 64
@@ -84,7 +84,7 @@ Alembic runs automatically inside the api container on every boot.
 
 ## Step 4 — Seed the first admin against the prod DB
 
-The admin you seeded locally already exists in Neon (same DB). Verify by visiting `https://<ADMIN_DOMAIN>` and logging in with `digital@fourdm.com` / `Admin@123`.
+The admin you seeded locally already exists in Supabase (same DB). Verify by visiting `https://<ADMIN_DOMAIN>` and logging in with `digital@fourdm.com` / `Admin@123`.
 
 If you ever need to reset:
 
@@ -134,5 +134,5 @@ docker compose -f docker-compose.prod.yml down
 
 - **Caddy can't get a cert** — check DNS resolves to the droplet IP, and ports 80/443 are open. `dig <ADMIN_DOMAIN>` from your laptop.
 - **502 from admin** — `docker compose logs admin`. Usually means the build failed; rebuild with `--build`.
-- **DB connection refused** — verify `DATABASE_URL` in `.env` and that the droplet can reach Neon (`docker compose exec api python -c "from app.database import engine; print(engine.connect())"`).
+- **DB connection refused** — verify `DATABASE_URL` in `.env` and that the droplet can reach Supabase (`docker compose exec api python -c "from app.database import engine; print(engine.connect())"`).
 - **JWT errors after redeploy** — if you changed `JWT_SECRET`, all existing tokens are invalidated. Users have to log in again. Expected.
