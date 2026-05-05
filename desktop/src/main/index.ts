@@ -106,7 +106,7 @@ if (!gotLock) {
   });
 
   app.on("before-quit", () => {
-    (globalThis as unknown as { __fdmQuitting?: boolean }).__fdmQuitting = true;
+    globalThis.__fdmQuitting = true;
     syncWorker.stop();
   });
 

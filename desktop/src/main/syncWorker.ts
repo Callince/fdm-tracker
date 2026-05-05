@@ -18,7 +18,15 @@ import { log } from "./logger";
 type OnStatus = (msg: { online: boolean; lastOkAt: string | null; lastError: string | null; pending: number }) => void;
 type OnSampleTick = () => void;
 
-let bucketStart = 0;               // epoch ms
+// Bucket-boundary timing uses a MONOTONIC clock so a DST jump or NTP
+// correction during a session can't make a bucket overlap or skip. The
+// wall-clock start is captured separately for the ISO timestamp written
+// to disk (user-meaningful time).
+function nowMono(): number {
+  return Number(process.hrtime.bigint() / 1_000_000n);
+}
+let bucketStartMono = 0;           // monotonic ms — for elapsed math only
+let bucketStartWall = 0;           // epoch ms     — for ISO timestamps
 let activeAccum = 0;               // seconds this bucket has been "active"
 let idleAccum = 0;                 // seconds this bucket has been "idle"
 let currentSessionId: string | null = null;
@@ -43,9 +51,9 @@ function emitStatus(online: boolean) {
   });
 }
 
-function closeBucket(now: number) {
-  if (!currentSessionId || bucketStart === 0) return;
-  const totalElapsed = Math.round((now - bucketStart) / 1000);
+function closeBucket(nowMono: number, nowWall: number) {
+  if (!currentSessionId || bucketStartMono === 0) return;
+  const totalElapsed = Math.round((nowMono - bucketStartMono) / 1000);
   if (totalElapsed <= 0) return;
   const counts = inputCounter.drain();
   // First bucket — gets any tracked active/idle + the input counts.
@@ -54,7 +62,7 @@ function closeBucket(now: number) {
   const firstIdle = Math.max(0, firstSize - firstActive);
   localDb.insertBucket({
     session_id: currentSessionId,
-    bucket_start: new Date(bucketStart).toISOString(),
+    bucket_start: new Date(bucketStartWall).toISOString(),
     active_seconds: firstActive,
     idle_seconds: firstIdle,
     keystroke_count: counts.keystrokes,
@@ -64,7 +72,7 @@ function closeBucket(now: number) {
   // sleep / lid-close / lock-screen gaps that span more than a single
   // 60s bucket — without this, a 2-hour nap would collapse into a
   // single 60s bucket and the timeline would have an empty stretch.
-  let cursor = bucketStart + firstSize * 1000;
+  let cursor = bucketStartWall + firstSize * 1000;
   let remaining = totalElapsed - firstSize;
   while (remaining > 0) {
     const seconds = Math.min(config.bucketSeconds, remaining);
@@ -80,17 +88,21 @@ function closeBucket(now: number) {
     remaining -= seconds;
   }
   // advance the window; carry no residual
-  bucketStart = now;
+  bucketStartMono = nowMono;
+  bucketStartWall = nowWall;
   activeAccum = 0;
   idleAccum = 0;
 }
 
 function onSample(s: Sample) {
   if (!currentSessionId) return;
-  if (bucketStart === 0) bucketStart = s.timestamp;
-  const elapsedSinceBucket = (s.timestamp - bucketStart) / 1000;
+  if (bucketStartMono === 0) {
+    bucketStartMono = s.monoMs;
+    bucketStartWall = s.timestamp;
+  }
+  const elapsedSinceBucket = (s.monoMs - bucketStartMono) / 1000;
   if (elapsedSinceBucket >= config.bucketSeconds) {
-    closeBucket(s.timestamp);
+    closeBucket(s.monoMs, s.timestamp);
   }
   // Each sample represents the interval [sample-sampleInterval, sample].
   const windowSeconds = config.sampleIntervalMs / 1000;
@@ -159,9 +171,15 @@ export const syncWorker = {
 
   setSession(sessionId: string | null) {
     // Close current bucket before switching sessions so buckets never straddle.
-    if (bucketStart !== 0) closeBucket(Date.now());
+    if (bucketStartMono !== 0) closeBucket(nowMono(), Date.now());
     currentSessionId = sessionId;
-    bucketStart = sessionId ? Date.now() : 0;
+    if (sessionId) {
+      bucketStartMono = nowMono();
+      bucketStartWall = Date.now();
+    } else {
+      bucketStartMono = 0;
+      bucketStartWall = 0;
+    }
     activeAccum = 0;
     idleAccum = 0;
     inputCounter.drain(); // reset counters on session switch
@@ -176,7 +194,7 @@ export const syncWorker = {
   },
 
   forceFlushBucket() {
-    if (currentSessionId && bucketStart !== 0) closeBucket(Date.now());
+    if (currentSessionId && bucketStartMono !== 0) closeBucket(nowMono(), Date.now());
   },
 
   async forceSync() {

@@ -5,6 +5,8 @@ import { signRequest } from "./hmac";
 import { auth } from "./auth";
 import { config } from "./config";
 import type {
+  ActivityBatchResponse,
+  ActivityBucketUpload,
   DailySummaryList,
   DayDetail,
   UserProfile,
@@ -221,8 +223,8 @@ export const api = {
       body: { break_id: breakId, ended_at: endedAt }, sign: true,
     }),
 
-  pushActivityBatch: (buckets: unknown[]) =>
-    request<{ accepted: number; deduplicated: number; rejected: number; reasons: string[] }>({
+  pushActivityBatch: (buckets: ActivityBucketUpload[]) =>
+    request<ActivityBatchResponse>({
       path: "/activity/batch", method: "POST", body: { buckets }, sign: true,
     }),
 

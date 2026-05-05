@@ -49,16 +49,20 @@ export default function UserDetailPage() {
     return { from: format(from, "yyyy-MM-dd"), to: format(to, "yyyy-MM-dd") };
   }, [month]);
 
+  // Fire summary + day-detail in parallel with userQ rather than waiting
+  // on it. The backend already 404s on a bad user id, so gating these on
+  // userQ.data only created a wasted round-trip; in the common case (page
+  // load with a valid id) all three queries now race and complete together.
   const summaryQ = useQuery({
     queryKey: ["admin", "user", id, "summary", monthRange.from, monthRange.to],
     queryFn: () => api.userDailySummary(id, monthRange.from, monthRange.to),
-    enabled: !!userQ.data,
+    staleTime: 30_000,
   });
 
   const dayQ = useQuery({
     queryKey: ["admin", "user", id, "day", format(day, "yyyy-MM-dd")],
     queryFn: () => api.userDayDetails(id, format(day, "yyyy-MM-dd")),
-    enabled: !!userQ.data,
+    staleTime: 30_000,
   });
 
   const holidaysQ = useQuery({

@@ -112,15 +112,10 @@ function open(): Database.Database {
   return db;
 }
 
-export interface PendingBucket {
-  client_event_id: string;
-  session_id: string;
-  bucket_start: string;
-  active_seconds: number;
-  idle_seconds: number;
-  keystroke_count: number;
-  mouse_event_count: number;
-}
+// Re-exported under the existing PendingBucket name so internal call sites
+// don't churn; the wire shape itself lives in @shared/types.
+export type { ActivityBucketUpload as PendingBucket } from "@shared/types";
+import type { ActivityBucketUpload as PendingBucket } from "@shared/types";
 
 export const localDb = {
   insertBucket(b: Omit<PendingBucket, "client_event_id">): string {

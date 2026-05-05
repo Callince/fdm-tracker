@@ -100,8 +100,7 @@ export function createMainWindow(): BrowserWindow {
   mainWin.on("close", (e) => {
     // Minimize to tray instead of quitting. The user can choose "Quit"
     // explicitly from the tray menu.
-    const anyApp = (globalThis as unknown as { __fdmQuitting?: boolean }).__fdmQuitting;
-    if (!anyApp && mainWin) {
+    if (!globalThis.__fdmQuitting && mainWin) {
       e.preventDefault();
       mainWin.hide();
     }
