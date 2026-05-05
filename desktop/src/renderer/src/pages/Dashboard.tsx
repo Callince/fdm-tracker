@@ -112,6 +112,12 @@ export function Dashboard({ status }: Props) {
                       : "text-active"
                 }`}
               />
+              {/* Clarifies that the live timer is current-session only —
+                  the day total appears in the Active/Idle/Break stat cards
+                  below, which include any earlier sessions today too. */}
+              <div className="text-[10px] uppercase tracking-wider text-slate-400 dark:text-slate-500 mt-0.5">
+                this session · since {formatHHmm(timerStart)}
+              </div>
             </div>
           )}
         </div>
@@ -250,6 +256,11 @@ export function Dashboard({ status }: Props) {
       )}
     </div>
   );
+}
+
+function formatHHmm(iso: string): string {
+  const d = new Date(iso);
+  return `${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}`;
 }
 
 function Stat({

@@ -244,6 +244,7 @@ def login(
         is_new_device=is_new,
         idle_threshold_minutes=settings_row.idle_threshold_minutes,
         target_hours_per_day=settings_row.target_hours_per_day,
+        workday_start_hour=settings_row.workday_start_hour,
     )
 
 

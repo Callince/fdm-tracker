@@ -32,6 +32,7 @@ interface AuthState {
     timezone: string;
     idle_threshold_minutes: number;
     target_hours_per_day: number;
+    workday_start_hour: number;
   } | null;
 }
 
@@ -144,6 +145,12 @@ function readAndMigrate(): AuthState {
   const profile = stored.profile;
   if (profile && typeof profile.target_hours_per_day !== "number") {
     profile.target_hours_per_day = 8;
+  }
+  // Forward-migration: profiles persisted before workday_start_hour was
+  // added default to 04:00 (the server default). Avoids forcing a re-login
+  // on existing 0.3.9 installs.
+  if (profile && typeof profile.workday_start_hour !== "number") {
+    profile.workday_start_hour = 4;
   }
   return {
     accessToken,
