@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { formatInTimeZone } from "date-fns-tz";
+import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import { IpcChannels } from "@shared/ipc";
 import type { AppStatus, LoginResult, TodaySessionEntry } from "@shared/types";
 import { api, ApiError } from "./api";
@@ -29,10 +29,12 @@ let currentBreakId: string | null = null;
 let currentBreakStartedAt: string | null = null;
 let connectionOnline = true;
 
-// Cached today-snapshot, refreshed by `refreshTodayTotals()` every 30s + on sync.
-let todayActiveSec = 0;
-let todayIdleSec = 0;
-let todayBreakSec = 0;
+// Today's session/break list. Refreshed from the server by
+// `refreshTodayTotals()` every 30s for the timeline view. The numeric
+// totals (active / idle / break seconds) are NOT cached here — they are
+// derived live from the local SQLite buffer + the in-progress bucket
+// accumulator + this entries list (see computeTodayTotals below) so that
+// the dashboard never lags the wall-clock timer.
 let todayEntries: TodaySessionEntry[] = [];
 let todayRefreshBusy = false;
 
@@ -52,9 +54,55 @@ function liveState(): AppStatus["live_state"] {
   return "active";
 }
 
+/**
+ * Compute today's totals from the most authoritative sources available:
+ *   - active / idle: sum of all locally-stored buckets for today (synced
+ *     + pending) + the in-progress bucket accumulator.
+ *   - break: sum of break entries (closing an open break with `now`).
+ *
+ * This guarantees that
+ *   today_active_seconds + today_idle_seconds + today_break_seconds
+ * always tracks the live wall-clock since session start, with at most one
+ * sample-interval (~10s) of lag. Previously these were pulled from the
+ * server, which made them lag by up to (60s bucket close + 60s sync push
+ * + 30s poll = 2.5 min) in the best case, and minutes longer when the
+ * sync worker was backing off.
+ */
+function computeTodayTotals(): { active: number; idle: number; brk: number } {
+  const a = auth.get();
+  if (!a.profile) return { active: 0, idle: 0, brk: 0 };
+  const tz = a.profile.timezone;
+  let active = 0;
+  let idle = 0;
+  try {
+    const localDate = formatInTimeZone(new Date(), tz, "yyyy-MM-dd");
+    const dayStart = fromZonedTime(`${localDate} 00:00:00`, tz).toISOString();
+    const dayEnd = fromZonedTime(`${localDate} 23:59:59.999`, tz).toISOString();
+    const flushed = localDb.todayBucketTotals(dayStart, dayEnd);
+    const live = syncWorker.currentBucketAccum();
+    active = flushed.active_seconds + Math.floor(live.active);
+    idle = flushed.idle_seconds + Math.floor(live.idle);
+  } catch {
+    // localDb / tz issue — fall through with zeros so the UI doesn't crash.
+  }
+  // Break time = sum over today's break entries; an open break uses `now`.
+  const now = Date.now();
+  let brk = 0;
+  for (const e of todayEntries) {
+    if (e.kind !== "break") continue;
+    const start = Date.parse(e.started_at);
+    if (Number.isNaN(start)) continue;
+    const end = e.ended_at ? Date.parse(e.ended_at) : now;
+    if (Number.isNaN(end) || end <= start) continue;
+    brk += Math.floor((end - start) / 1000);
+  }
+  return { active, idle, brk };
+}
+
 function status(): AppStatus {
   const a = auth.get();
   const p = prefs.get();
+  const totals = computeTodayTotals();
   return {
     signed_in: !!a.accessToken && !!a.profile,
     profile: a.profile ?? undefined,
@@ -62,9 +110,9 @@ function status(): AppStatus {
     on_break: !!currentBreakId,
     session_started_at: currentSessionStartedAt,
     break_started_at: currentBreakStartedAt,
-    today_active_seconds: todayActiveSec,
-    today_idle_seconds: todayIdleSec,
-    today_break_seconds: todayBreakSec,
+    today_active_seconds: totals.active,
+    today_idle_seconds: totals.idle,
+    today_break_seconds: totals.brk,
     today_entries: todayEntries,
     pending_sync_count: syncWorker.pending(),
     last_sync_ok_at: syncWorker.lastOk(),
@@ -104,13 +152,10 @@ async function refreshTodayTotals() {
   try {
     const tz = s.profile.timezone;
     const localDate = formatInTimeZone(new Date(), tz, "yyyy-MM-dd");
+    // We still pull the server's day-detail for the timeline (sessions +
+    // breaks list shown on the dashboard), but we no longer trust its
+    // numeric totals — those are computed live in computeTodayTotals().
     const d = await api.dayDetail(localDate);
-    todayActiveSec = d.totals.total_active_seconds;
-    todayIdleSec = d.totals.total_idle_seconds;
-    todayBreakSec = d.totals.total_break_seconds;
-    // Build a lookup of session ended_at so we can treat a break as closed
-    // when its parent session has ended, even if the break row itself
-    // temporarily has ended_at=null (stale data from a crashed client).
     const sessionEndedAt = new Map<string, string | null>();
     for (const s of d.sessions) sessionEndedAt.set(s.id, s.ended_at);
 
@@ -133,7 +178,8 @@ async function refreshTodayTotals() {
     ].sort((a, b) => a.started_at.localeCompare(b.started_at));
     pushStatus();
   } catch {
-    // non-fatal; dashboard keeps the last known values
+    // non-fatal; dashboard keeps the last known timeline + the locally-
+    // computed totals continue to update from idle samples.
   } finally {
     todayRefreshBusy = false;
   }
@@ -152,9 +198,6 @@ function startTodayPoller() {
 function stopTodayPoller() {
   if (todayTimer) clearInterval(todayTimer);
   todayTimer = null;
-  todayActiveSec = 0;
-  todayIdleSec = 0;
-  todayBreakSec = 0;
   todayEntries = [];
 }
 
@@ -329,7 +372,8 @@ function evaluateNudges() {
     if (h >= p.endOfDayReminderHour && lastEodNudgeLocalDate !== localDate) {
       lastEodNudgeLocalDate = localDate;
       const targetSec = (a.profile.target_hours_per_day ?? 8) * 3600;
-      const loggedSec = todayActiveSec + todayIdleSec + todayBreakSec;
+      const t = computeTodayTotals();
+      const loggedSec = t.active + t.idle + t.brk;
       const gapSec = Math.max(0, targetSec - loggedSec);
       const body =
         gapSec > 0
@@ -512,6 +556,9 @@ export function registerIpc() {
       const fp = ensureFingerprint();
       const profile = await api.login(body.email.trim().toLowerCase(), body.password, fp, process.platform, os.hostname());
       syncWorker.start(profile.idle_threshold_minutes, () => { pushStatus(); void refreshTodayTotals(); });
+      // Push status on every idle sample (~10s) so the renderer's live
+      // active/idle/break totals stay aligned with the wall-clock timer.
+      syncWorker.onSampleTick(() => pushStatus());
       idleMonitor.setThreshold(profile.idle_threshold_minutes);
       rebuildTrayWithHandlers({ startWork: doStartWork, endWork: doEndWork, startBreak: doStartBreak, endBreak: doEndBreak });
       startTodayPoller();

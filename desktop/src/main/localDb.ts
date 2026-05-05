@@ -173,6 +173,21 @@ export const localDb = {
     return row.c;
   },
 
+  /** Sum every activity_bucket whose `bucket_start` falls in the half-open
+   * range [fromIso, toIso). Includes synced AND pending rows — local data is
+   * the source of truth for "today's totals" on the device that's tracking. */
+  todayBucketTotals(fromIso: string, toIso: string): { active_seconds: number; idle_seconds: number } {
+    const r = open()
+      .prepare(
+        `SELECT COALESCE(SUM(active_seconds), 0) AS a,
+                COALESCE(SUM(idle_seconds), 0)   AS i
+         FROM activity_buckets
+         WHERE bucket_start >= ? AND bucket_start < ?`,
+      )
+      .get(fromIso, toIso) as { a: number; i: number };
+    return { active_seconds: r.a, idle_seconds: r.i };
+  },
+
   getState(k: string): string | null {
     const r = open().prepare(`SELECT v FROM state WHERE k = ?`).get(k) as { v: string } | undefined;
     return r?.v ?? null;

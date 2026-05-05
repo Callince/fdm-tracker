@@ -66,6 +66,9 @@ if (!gotLock) {
         ipcOps.pushStatus();
         void ipcOps.refreshTodayTotals();
       });
+      // Live tick: push status to the renderer on every idle sample (~10s)
+      // so today's active/idle/break totals never lag the live timer.
+      syncWorker.onSampleTick(() => ipcOps.pushStatus());
       // Restore an open session if one was persisted before the last quit,
       // so a crash / shutdown doesn't make the user manually click 'Start
       // work' again. Must run after syncWorker.start so setSession's bucket

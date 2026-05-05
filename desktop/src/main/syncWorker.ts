@@ -16,6 +16,7 @@ import { localDb } from "./localDb";
 import { log } from "./logger";
 
 type OnStatus = (msg: { online: boolean; lastOkAt: string | null; lastError: string | null; pending: number }) => void;
+type OnSampleTick = () => void;
 
 let bucketStart = 0;               // epoch ms
 let activeAccum = 0;               // seconds this bucket has been "active"
@@ -27,6 +28,10 @@ let backoff = 0;
 let lastOkAt: string | null = null;
 let lastError: string | null = null;
 let statusListener: OnStatus | null = null;
+// Optional per-sample listener used by the IPC layer to push fresh status
+// to the renderer every ~10s, so live totals stay aligned with the wall
+// clock instead of lagging behind the 30s poller.
+let sampleTickListener: OnSampleTick | null = null;
 
 function emitStatus(online: boolean) {
   if (!statusListener) return;
@@ -91,6 +96,9 @@ function onSample(s: Sample) {
   const windowSeconds = config.sampleIntervalMs / 1000;
   if (s.isActive) activeAccum += windowSeconds;
   else idleAccum += windowSeconds;
+  // Fire the tick AFTER accumulating so listeners (the IPC pushStatus)
+  // see the latest counts. Cheap — at most one ipc.send per 10 seconds.
+  sampleTickListener?.();
 }
 
 async function drainToServer() {
@@ -173,6 +181,19 @@ export const syncWorker = {
 
   async forceSync() {
     await drainToServer();
+  },
+
+  /** Read-only view of the in-progress bucket — used by status() so the
+   * dashboard's active/idle totals reflect time we've measured but not yet
+   * flushed to SQLite. Values are floats (sample-interval granularity). */
+  currentBucketAccum(): { active: number; idle: number } {
+    return { active: activeAccum, idle: idleAccum };
+  },
+
+  /** Subscribe to the per-sample tick (~10s). Used by IPC to call pushStatus
+   * so the renderer's live totals tick alongside the wall-clock timer. */
+  onSampleTick(cb: OnSampleTick | null) {
+    sampleTickListener = cb;
   },
 
   lastOk(): string | null { return lastOkAt; },
