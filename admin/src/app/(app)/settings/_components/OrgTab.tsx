@@ -9,7 +9,7 @@ import { Card, CardBody, CardHeader } from "@/components/ui/card";
 
 export function OrgTab() {
   const qc = useQueryClient();
-  const q = useQuery({ queryKey: ["admin", "settings"], queryFn: () => api.getSettings() });
+  const q = useQuery({ queryKey: ["admin", "settings"], queryFn: ({ signal }) => api.getSettings(signal) });
   const [idle, setIdle] = useState(5);
   const [startHour, setStartHour] = useState(4);
   const [targetHours, setTargetHours] = useState(8);

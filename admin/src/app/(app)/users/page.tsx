@@ -24,11 +24,11 @@ export default function PeoplePage() {
 
   const usersQ = useQuery({
     queryKey: ["admin", "users"],
-    queryFn: () => api.listUsers(),
+    queryFn: ({ signal }) => api.listUsers(signal),
   });
   const teamsQ = useQuery({
     queryKey: ["admin", "teams"],
-    queryFn: () => api.listTeams(),
+    queryFn: ({ signal }) => api.listTeams(signal),
   });
 
   const [query, setQuery] = useState("");

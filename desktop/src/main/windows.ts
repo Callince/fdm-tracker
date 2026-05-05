@@ -67,7 +67,7 @@ export function createMainWindow(): BrowserWindow {
     backgroundColor: "#f8fafc",
     webPreferences: {
       preload: join(__dirname, "../preload/index.js"),
-      sandbox: false,
+      sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
     },
@@ -100,8 +100,7 @@ export function createMainWindow(): BrowserWindow {
   mainWin.on("close", (e) => {
     // Minimize to tray instead of quitting. The user can choose "Quit"
     // explicitly from the tray menu.
-    const anyApp = (globalThis as unknown as { __fdmQuitting?: boolean }).__fdmQuitting;
-    if (!anyApp && mainWin) {
+    if (!globalThis.__fdmQuitting && mainWin) {
       e.preventDefault();
       mainWin.hide();
     }

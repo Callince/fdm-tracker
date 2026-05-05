@@ -17,10 +17,10 @@ import { ActivityHighlights } from "@/components/ActivityHighlights";
 export default function TeamDetailPage() {
   const { id } = useParams<{ id: string }>();
 
-  const teamsQ = useQuery({ queryKey: ["admin", "teams"], queryFn: () => api.listTeams() });
+  const teamsQ = useQuery({ queryKey: ["admin", "teams"], queryFn: ({ signal }) => api.listTeams(signal) });
   const liveQ = useQuery({
     queryKey: ["admin", "live"],
-    queryFn: () => api.liveSnapshot(),
+    queryFn: ({ signal }) => api.liveSnapshot(signal),
     refetchInterval: 30_000,
   });
 

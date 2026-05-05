@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { formatInTimeZone } from "date-fns-tz";
+import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import { IpcChannels } from "@shared/ipc";
 import type { AppStatus, LoginResult, TodaySessionEntry } from "@shared/types";
 import { api, ApiError } from "./api";
@@ -19,6 +19,8 @@ import { getMainWindow, showMainWindow } from "./windows";
 import { getWidgetWindow, hideWidget, toggleWidget, isWidgetVisible, setWidgetSize, type WidgetSize } from "./widget";
 import { rebuild as rebuildTray } from "./tray";
 import { notify } from "./notifications";
+import { isHttpUrl, rejectUnsafe } from "./urlSafety";
+import { log } from "./logger";
 
 let sessionActive = false;
 let currentSessionId: string | null = null;
@@ -27,10 +29,12 @@ let currentBreakId: string | null = null;
 let currentBreakStartedAt: string | null = null;
 let connectionOnline = true;
 
-// Cached today-snapshot, refreshed by `refreshTodayTotals()` every 30s + on sync.
-let todayActiveSec = 0;
-let todayIdleSec = 0;
-let todayBreakSec = 0;
+// Today's session/break list. Refreshed from the server by
+// `refreshTodayTotals()` every 30s for the timeline view. The numeric
+// totals (active / idle / break seconds) are NOT cached here — they are
+// derived live from the local SQLite buffer + the in-progress bucket
+// accumulator + this entries list (see computeTodayTotals below) so that
+// the dashboard never lags the wall-clock timer.
 let todayEntries: TodaySessionEntry[] = [];
 let todayRefreshBusy = false;
 
@@ -50,9 +54,55 @@ function liveState(): AppStatus["live_state"] {
   return "active";
 }
 
+/**
+ * Compute today's totals from the most authoritative sources available:
+ *   - active / idle: sum of all locally-stored buckets for today (synced
+ *     + pending) + the in-progress bucket accumulator.
+ *   - break: sum of break entries (closing an open break with `now`).
+ *
+ * This guarantees that
+ *   today_active_seconds + today_idle_seconds + today_break_seconds
+ * always tracks the live wall-clock since session start, with at most one
+ * sample-interval (~10s) of lag. Previously these were pulled from the
+ * server, which made them lag by up to (60s bucket close + 60s sync push
+ * + 30s poll = 2.5 min) in the best case, and minutes longer when the
+ * sync worker was backing off.
+ */
+function computeTodayTotals(): { active: number; idle: number; brk: number } {
+  const a = auth.get();
+  if (!a.profile) return { active: 0, idle: 0, brk: 0 };
+  const tz = a.profile.timezone;
+  let active = 0;
+  let idle = 0;
+  try {
+    const localDate = formatInTimeZone(new Date(), tz, "yyyy-MM-dd");
+    const dayStart = fromZonedTime(`${localDate} 00:00:00`, tz).toISOString();
+    const dayEnd = fromZonedTime(`${localDate} 23:59:59.999`, tz).toISOString();
+    const flushed = localDb.todayBucketTotals(dayStart, dayEnd);
+    const live = syncWorker.currentBucketAccum();
+    active = flushed.active_seconds + Math.floor(live.active);
+    idle = flushed.idle_seconds + Math.floor(live.idle);
+  } catch {
+    // localDb / tz issue — fall through with zeros so the UI doesn't crash.
+  }
+  // Break time = sum over today's break entries; an open break uses `now`.
+  const now = Date.now();
+  let brk = 0;
+  for (const e of todayEntries) {
+    if (e.kind !== "break") continue;
+    const start = Date.parse(e.started_at);
+    if (Number.isNaN(start)) continue;
+    const end = e.ended_at ? Date.parse(e.ended_at) : now;
+    if (Number.isNaN(end) || end <= start) continue;
+    brk += Math.floor((end - start) / 1000);
+  }
+  return { active, idle, brk };
+}
+
 function status(): AppStatus {
   const a = auth.get();
   const p = prefs.get();
+  const totals = computeTodayTotals();
   return {
     signed_in: !!a.accessToken && !!a.profile,
     profile: a.profile ?? undefined,
@@ -60,9 +110,9 @@ function status(): AppStatus {
     on_break: !!currentBreakId,
     session_started_at: currentSessionStartedAt,
     break_started_at: currentBreakStartedAt,
-    today_active_seconds: todayActiveSec,
-    today_idle_seconds: todayIdleSec,
-    today_break_seconds: todayBreakSec,
+    today_active_seconds: totals.active,
+    today_idle_seconds: totals.idle,
+    today_break_seconds: totals.brk,
     today_entries: todayEntries,
     pending_sync_count: syncWorker.pending(),
     last_sync_ok_at: syncWorker.lastOk(),
@@ -102,13 +152,10 @@ async function refreshTodayTotals() {
   try {
     const tz = s.profile.timezone;
     const localDate = formatInTimeZone(new Date(), tz, "yyyy-MM-dd");
+    // We still pull the server's day-detail for the timeline (sessions +
+    // breaks list shown on the dashboard), but we no longer trust its
+    // numeric totals — those are computed live in computeTodayTotals().
     const d = await api.dayDetail(localDate);
-    todayActiveSec = d.totals.total_active_seconds;
-    todayIdleSec = d.totals.total_idle_seconds;
-    todayBreakSec = d.totals.total_break_seconds;
-    // Build a lookup of session ended_at so we can treat a break as closed
-    // when its parent session has ended, even if the break row itself
-    // temporarily has ended_at=null (stale data from a crashed client).
     const sessionEndedAt = new Map<string, string | null>();
     for (const s of d.sessions) sessionEndedAt.set(s.id, s.ended_at);
 
@@ -131,7 +178,8 @@ async function refreshTodayTotals() {
     ].sort((a, b) => a.started_at.localeCompare(b.started_at));
     pushStatus();
   } catch {
-    // non-fatal; dashboard keeps the last known values
+    // non-fatal; dashboard keeps the last known timeline + the locally-
+    // computed totals continue to update from idle samples.
   } finally {
     todayRefreshBusy = false;
   }
@@ -150,9 +198,6 @@ function startTodayPoller() {
 function stopTodayPoller() {
   if (todayTimer) clearInterval(todayTimer);
   todayTimer = null;
-  todayActiveSec = 0;
-  todayIdleSec = 0;
-  todayBreakSec = 0;
   todayEntries = [];
 }
 
@@ -187,19 +232,19 @@ let autoLockTimer: NodeJS.Timeout | null = null;
 function startNudgeMonitor() {
   if (!nudgeTimer) {
     nudgeTimer = setInterval(() => {
-      try { evaluateNudges(); } catch (e) { console.warn("[nudge]", (e as Error).message); }
+      try { evaluateNudges(); } catch (e) { log.warn("[nudge]", (e as Error).message); }
     }, 60_000);
   }
   if (!autoBreakTimer) {
     // Auto-break evaluation runs more often so "welcome back" fires within ~20s
     // of the user returning rather than making them wait a full minute.
     autoBreakTimer = setInterval(() => {
-      try { evaluateAutoBreak(); } catch (e) { console.warn("[auto-break]", (e as Error).message); }
+      try { evaluateAutoBreak(); } catch (e) { log.warn("[auto-break]", (e as Error).message); }
     }, 20_000);
   }
   if (!autoLockTimer) {
     autoLockTimer = setInterval(() => {
-      try { evaluateAutoLock(); } catch (e) { console.warn("[auto-lock]", (e as Error).message); }
+      try { evaluateAutoLock(); } catch (e) { log.warn("[auto-lock]", (e as Error).message); }
     }, 30_000);
   }
 }
@@ -224,7 +269,7 @@ function evaluateAutoLock() {
   autoLocking = true;
   void (async () => {
     try {
-      console.warn(`[auto-lock] idle ${idleSec}s ≥ ${p.autoLockMinutes}m — locking`);
+      log.warn(`[auto-lock] idle ${idleSec}s ≥ ${p.autoLockMinutes}m — locking`);
       // End any active session first so the gap doesn't keep counting as idle.
       if (sessionActive) await doEndWork();
       try { await api.logout(); } catch { /* ignore */ }
@@ -272,7 +317,7 @@ async function autoStartBreak() {
     autoBreakId = r.break_id;
     notify("Work auto-paused", "Idle for a while — FDM started a break. Move your mouse to resume.", showMainWindow);
   } catch (e) {
-    console.error("[auto-break:start]", e);
+    log.error("[auto-break:start]", e);
   }
   pushStatus();
   void refreshTodayTotals();
@@ -282,7 +327,7 @@ async function autoEndBreak() {
   if (!currentBreakId) return;
   const bid = currentBreakId;
   const now = new Date().toISOString();
-  try { await api.endBreak(bid, now); } catch (e) { console.error("[auto-break:end]", e); }
+  try { await api.endBreak(bid, now); } catch (e) { log.error("[auto-break:end]", e); }
   currentBreakId = null;
   currentBreakStartedAt = null;
   autoBreakId = null;
@@ -327,7 +372,8 @@ function evaluateNudges() {
     if (h >= p.endOfDayReminderHour && lastEodNudgeLocalDate !== localDate) {
       lastEodNudgeLocalDate = localDate;
       const targetSec = (a.profile.target_hours_per_day ?? 8) * 3600;
-      const loggedSec = todayActiveSec + todayIdleSec + todayBreakSec;
+      const t = computeTodayTotals();
+      const loggedSec = t.active + t.idle + t.brk;
       const gapSec = Math.max(0, targetSec - loggedSec);
       const body =
         gapSec > 0
@@ -382,7 +428,7 @@ async function doStartWork() {
       started_at: currentSessionStartedAt,
     }));
   } catch (e) {
-    console.error("[work:start]", e);
+    log.error("[work:start]", e);
   }
   pushStatus();
   void refreshTodayTotals();
@@ -426,12 +472,12 @@ async function doEndWork() {
   // which is fine but skips the explicit attempt here. Doing it first means
   // the per-break duration is exactly what the user intended.
   if (currentBreakId) {
-    try { await api.endBreak(currentBreakId, now); } catch (e) { console.error("[work:end-break]", e); }
+    try { await api.endBreak(currentBreakId, now); } catch (e) { log.error("[work:end-break]", e); }
     currentBreakId = null;
     currentBreakStartedAt = null;
     autoBreakId = null;
   }
-  try { await api.endSession(sid, now); } catch (e) { console.error("[work:end]", e); }
+  try { await api.endSession(sid, now); } catch (e) { log.error("[work:end]", e); }
   sessionActive = false;
   currentSessionId = null;
   currentSessionStartedAt = null;
@@ -448,7 +494,7 @@ async function doStartBreak() {
     const r = await api.startBreak(currentSessionId, now);
     currentBreakId = r.break_id;
     currentBreakStartedAt = now;
-  } catch (e) { console.error("[break:start]", e); }
+  } catch (e) { log.error("[break:start]", e); }
   pushStatus();
   void refreshTodayTotals();
 }
@@ -462,7 +508,7 @@ async function doEndBreak() {
     await api.endBreak(bid, now);
     ok = true;
   } catch (e) {
-    console.error("[break:end]", e);
+    log.error("[break:end]", e);
   }
   // Only clear local state when the server confirmed the break ended. If
   // the API call failed, keep currentBreakId so the UI still shows
@@ -487,7 +533,7 @@ async function doEndBreakById(breakId: string) {
   }
   // Otherwise it's an orphaned row from a crashed session — close it server-side.
   const now = new Date().toISOString();
-  try { await api.endBreak(breakId, now); } catch (e) { console.error("[break:endById]", e); }
+  try { await api.endBreak(breakId, now); } catch (e) { log.error("[break:endById]", e); }
   pushStatus();
   void refreshTodayTotals();
 }
@@ -510,6 +556,9 @@ export function registerIpc() {
       const fp = ensureFingerprint();
       const profile = await api.login(body.email.trim().toLowerCase(), body.password, fp, process.platform, os.hostname());
       syncWorker.start(profile.idle_threshold_minutes, () => { pushStatus(); void refreshTodayTotals(); });
+      // Push status on every idle sample (~10s) so the renderer's live
+      // active/idle/break totals stay aligned with the wall-clock timer.
+      syncWorker.onSampleTick(() => pushStatus());
       idleMonitor.setThreshold(profile.idle_threshold_minutes);
       rebuildTrayWithHandlers({ startWork: doStartWork, endWork: doEndWork, startBreak: doStartBreak, endBreak: doEndBreak });
       startTodayPoller();
@@ -568,8 +617,11 @@ export function registerIpc() {
   });
 
   ipcMain.handle(IpcChannels.openExternal, async (_e, url: string) => {
-    if (!url) return;
-    if (!/^https?:\/\//i.test(url)) return;   // safety: only http(s)
+    if (typeof url !== "string" || !url) return;
+    if (!isHttpUrl(url)) {
+      rejectUnsafe(url, "non-http scheme or malformed URL");
+      return;
+    }
     void shell.openExternal(url);
   });
 

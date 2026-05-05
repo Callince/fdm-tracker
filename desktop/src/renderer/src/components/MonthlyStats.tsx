@@ -1,27 +1,25 @@
 import { useEffect, useMemo, useState } from "react";
-import { addDays, endOfWeek, format, isSameDay, startOfDay, startOfWeek } from "date-fns";
+import { eachDayOfInterval, endOfMonth, format, isSameDay, startOfDay, startOfMonth } from "date-fns";
 import { hms } from "@/lib/format";
 import { Skeleton } from "@/components/Skeleton";
 import type { DailySummary, Holiday } from "@shared/types";
 
 /**
- * "This week" daily-active bar chart. Shows the **current ISO week**
- * (Mon → Sun) so the bars don't shift mid-week the way a rolling-7-day
- * view does. Today is highlighted; weekends + admin-marked holidays are
- * dimmed so the user can read working vs off days at a glance.
+ * "This month" daily-active bar chart. Shows every day from the 1st of
+ * the current month through today. Weekends + admin-marked holidays are
+ * dimmed; admin "working" overrides recolor a weekend back into a normal
+ * working day. Today is highlighted.
  */
-export function WeeklyStats() {
+export function MonthlyStats() {
   const [days, setDays] = useState<DailySummary[]>([]);
   const [holidays, setHolidays] = useState<Holiday[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const today = new Date();
-    const from = startOfWeek(today, { weekStartsOn: 1 });
-    const to = endOfWeek(today, { weekStartsOn: 1 });
+    const from = startOfMonth(today);
+    const to = endOfMonth(today);
     setLoading(true);
-    // Guard against the renderer rendering before preload finishes wiring
-    // window.fdm — happens briefly on cold start and in unit tests.
     const fdm = typeof window !== "undefined" ? window.fdm : undefined;
     if (!fdm) {
       setLoading(false);
@@ -42,15 +40,16 @@ export function WeeklyStats() {
       .finally(() => setLoading(false));
   }, []);
 
-  const { totalActive, maxActive, bars } = useMemo(() => {
+  const { bars, totalActive, workingDayCount, totalWorkingDayCount } = useMemo(() => {
     const today = new Date();
-    const weekStart = startOfWeek(today, { weekStartsOn: 1 });
+    const monthStart = startOfMonth(today);
+    const monthEnd = endOfMonth(today);
     const summaryByIso = new Map(days.map((d) => [d.date, d]));
     const holidayByIso = new Map(holidays.map((h) => [h.date, h]));
 
+    const all = eachDayOfInterval({ start: monthStart, end: monthEnd });
     const todayStart = startOfDay(today).getTime();
-    const bars = Array.from({ length: 7 }, (_, i) => {
-      const d = addDays(weekStart, i);
+    const bars = all.map((d) => {
       const iso = format(d, "yyyy-MM-dd");
       const summary = summaryByIso.get(iso);
       const holiday = holidayByIso.get(iso);
@@ -60,12 +59,11 @@ export function WeeklyStats() {
       return {
         date: d,
         iso,
-        label: format(d, "EEEEE"), // single-letter day
         dayNum: format(d, "d"),
         active: summary?.total_active_seconds ?? 0,
         isToday: isSameDay(d, today),
-        // Compare day-starts so a DST jump at 02:00 doesn't mis-classify
-        // a day as past or future.
+        // Day-start comparison is DST-safe — a clock jump at 02:00 won't
+        // suddenly flip a day into "future".
         isFuture: startOfDay(d).getTime() > todayStart,
         isOff,
         holidayName: holiday?.name,
@@ -73,22 +71,30 @@ export function WeeklyStats() {
     });
 
     const totalActive = bars.reduce((a, b) => a + b.active, 0);
-    const maxActive = bars.reduce((m, b) => Math.max(m, b.active), 1);
-    return { totalActive, maxActive, bars };
+    const workingDayCount = bars.filter((b) => !b.isOff && !b.isFuture).length;
+    const totalWorkingDayCount = bars.filter((b) => !b.isOff).length;
+    return { bars, totalActive, workingDayCount, totalWorkingDayCount };
   }, [days, holidays]);
+
+  // Use a sensible scale: target hours/day if known, else max active in range.
+  const maxScale = useMemo(() => {
+    const max = bars.reduce((m, b) => Math.max(m, b.active), 0);
+    // Round up to the nearest hour for cleaner bars.
+    const seconds = Math.max(max, 3600);
+    return Math.ceil(seconds / 3600) * 3600;
+  }, [bars]);
 
   if (loading) {
     return (
       <div className="space-y-2">
         <div className="flex items-baseline justify-between">
-          <Skeleton className="h-4 w-20" />
-          <Skeleton className="h-3 w-24" />
+          <Skeleton className="h-4 w-24" />
+          <Skeleton className="h-3 w-28" />
         </div>
-        <div className="flex items-end gap-2 h-16">
-          {Array.from({ length: 7 }).map((_, i) => (
-            <div key={i} className="flex-1 flex flex-col items-center gap-1">
-              <Skeleton className="w-full" style={{ height: `${20 + Math.random() * 60}%` } as React.CSSProperties} />
-              <Skeleton className="h-2 w-2" />
+        <div className="flex items-end gap-1 h-24">
+          {Array.from({ length: 30 }).map((_, i) => (
+            <div key={i} className="flex-1 flex flex-col items-center gap-1 min-w-0">
+              <Skeleton className="w-full" style={{ height: `${30 + ((i * 17) % 60)}%` } as React.CSSProperties} />
             </div>
           ))}
         </div>
@@ -101,14 +107,14 @@ export function WeeklyStats() {
       <div className="flex items-baseline justify-between">
         <div className="text-xs text-slate-500 dark:text-slate-400">
           total active <span className="text-active font-medium">{hms(totalActive)}</span>
+          <span className="ml-2 text-slate-400 dark:text-slate-500">
+            · {workingDayCount} / {totalWorkingDayCount} working days so far
+          </span>
         </div>
       </div>
-      <div className="flex items-end gap-2 h-20">
+      <div className="flex items-end gap-1 h-24">
         {bars.map((b) => {
-          const heightPct = (b.active / maxActive) * 100;
-          // Weekends / holidays use a muted color so they read as "off" even
-          // when there's a small amount of logged time. Today gets the full
-          // saturation. Future days render as a faint outline only.
+          const heightPct = (b.active / maxScale) * 100;
           const barCls = b.isOff
             ? "bg-slate-300/70 dark:bg-slate-700"
             : b.isToday
@@ -123,21 +129,31 @@ export function WeeklyStats() {
                   <div
                     className={`w-full rounded transition-colors ${barCls} ${b.isToday ? "ring-2 ring-active/40" : ""}`}
                     style={{ height: `${heightPct}%`, minHeight: b.active > 0 ? 2 : 0 }}
-                    title={b.holidayName ? `${b.holidayName} · ${hms(b.active)}` : hms(b.active)}
+                    title={
+                      b.holidayName
+                        ? `${b.holidayName} · ${hms(b.active)}`
+                        : `${format(b.date, "EEE d MMM")} · ${hms(b.active)}`
+                    }
                   />
                 )}
               </div>
-              <span
-                className={`text-[10px] tabular-nums ${
-                  b.isToday
-                    ? "text-active font-semibold"
-                    : b.isOff
-                      ? "text-slate-400 dark:text-slate-600"
-                      : "text-slate-500 dark:text-slate-400"
-                }`}
-              >
-                {b.label}
-              </span>
+              {/* Render the day-of-month every 5th bar so labels don't clutter
+                  on long months; today always gets a label. */}
+              {(b.isToday || Number(b.dayNum) % 5 === 0 || b.dayNum === "1") ? (
+                <span
+                  className={`text-[9px] tabular-nums ${
+                    b.isToday
+                      ? "text-active font-semibold"
+                      : b.isOff
+                        ? "text-slate-400 dark:text-slate-600"
+                        : "text-slate-500 dark:text-slate-400"
+                  }`}
+                >
+                  {b.dayNum}
+                </span>
+              ) : (
+                <span className="text-[9px] text-transparent">·</span>
+              )}
             </div>
           );
         })}

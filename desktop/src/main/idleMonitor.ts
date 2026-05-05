@@ -9,7 +9,12 @@ import { powerMonitor } from "electron";
 import { config } from "./config";
 
 export interface Sample {
-  timestamp: number;   // epoch ms
+  /** Wall-clock epoch ms — used only for ISO timestamps written to disk. */
+  timestamp: number;
+  /** Monotonic high-resolution time in milliseconds. Use this for *elapsed*
+   * math (bucket-boundary detection, drift calculations). NOT affected by
+   * DST changes, NTP corrections, or the user manually changing the clock. */
+  monoMs: number;
   idleSeconds: number;
   isActive: boolean;
 }
@@ -21,6 +26,12 @@ let intervalRef: NodeJS.Timeout | null = null;
 let thresholdMinutes = 5;
 let lastIdle = 0;
 
+function monoMs(): number {
+  // hrtime.bigint() returns nanoseconds since an arbitrary monotonic epoch.
+  // Number.MAX_SAFE_INTEGER fits ~104 days of ms — more than enough.
+  return Number(process.hrtime.bigint() / 1_000_000n);
+}
+
 export const idleMonitor = {
   start(idleThresholdMinutes: number) {
     thresholdMinutes = idleThresholdMinutes;
@@ -30,6 +41,7 @@ export const idleMonitor = {
       lastIdle = idle;
       const sample: Sample = {
         timestamp: Date.now(),
+        monoMs: monoMs(),
         idleSeconds: idle,
         isActive: idle < thresholdMinutes * 60,
       };

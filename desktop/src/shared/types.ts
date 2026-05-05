@@ -113,3 +113,35 @@ export interface DailySummaryList {
   timezone: string;
   days: DailySummary[];
 }
+
+export type HolidayKind = "holiday" | "working";
+
+export interface Holiday {
+  id: string;
+  date: string;        // YYYY-MM-DD
+  name: string;
+  kind: HolidayKind;
+}
+
+/**
+ * Wire format for `POST /activity/batch`. Produced by the local SQLite buffer
+ * (`localDb.pendingBuckets`), consumed by the typed API client. Sharing the
+ * shape across producer and consumer means a server-side schema change is
+ * caught at compile time instead of silently dropping fields.
+ */
+export interface ActivityBucketUpload {
+  client_event_id: string;
+  session_id: string;
+  bucket_start: string;          // ISO 8601 UTC
+  active_seconds: number;
+  idle_seconds: number;
+  keystroke_count: number;
+  mouse_event_count: number;
+}
+
+export interface ActivityBatchResponse {
+  accepted: number;
+  deduplicated: number;
+  rejected: number;
+  reasons: string[];
+}

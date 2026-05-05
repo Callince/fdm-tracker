@@ -26,7 +26,7 @@ export default function HolidaysPage() {
   const qc = useQueryClient();
   const holQ = useQuery({
     queryKey: ["admin", "holidays"],
-    queryFn: () => api.listHolidays(),
+    queryFn: ({ signal }) => api.listHolidays(signal),
   });
 
   const [cursor, setCursor] = useState(() => startOfMonth(new Date()));
@@ -36,8 +36,11 @@ export default function HolidaysPage() {
   const [err, setErr] = useState<string | null>(null);
   const [toDelete, setToDelete] = useState<Holiday | null>(null);
 
-  const createM = useMutation({
-    mutationFn: api.createHoliday,
+  // Single atomic upsert for both create and edit — replaces the older
+  // delete-then-create dance which could lose a holiday if the second
+  // call failed between the two round-trips.
+  const upsertM = useMutation({
+    mutationFn: api.upsertHoliday,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin", "holidays"] });
       setEditing(null);
@@ -80,18 +83,7 @@ export default function HolidaysPage() {
       setErr("Name required");
       return;
     }
-    // If an existing entry exists, delete first then create — backend is
-    // create-only (no PATCH on holidays).
-    const doCreate = () =>
-      createM.mutate({ date: editing.date, name: editName.trim(), kind: editKind });
-    if (editing.existing) {
-      deleteM.mutate(editing.existing.id, {
-        onSuccess: () => doCreate(),
-        onError: (e) => setErr(e instanceof ApiError ? e.message : "Failed"),
-      });
-    } else {
-      doCreate();
-    }
+    upsertM.mutate({ date: editing.date, name: editName.trim(), kind: editKind });
   }
 
   return (
@@ -237,8 +229,8 @@ export default function HolidaysPage() {
                 <Trash2 size={14} className="mr-1" /> Remove
               </Button>
             )}
-            <Button type="submit" form="holiday-form" disabled={createM.isPending || deleteM.isPending}>
-              {createM.isPending || deleteM.isPending ? "Saving…" : "Save"}
+            <Button type="submit" form="holiday-form" disabled={upsertM.isPending || deleteM.isPending}>
+              {upsertM.isPending || deleteM.isPending ? "Saving…" : "Save"}
             </Button>
           </>
         }

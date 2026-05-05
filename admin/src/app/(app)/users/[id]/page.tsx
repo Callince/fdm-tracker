@@ -40,7 +40,7 @@ export default function UserDetailPage() {
 
   const userQ = useQuery({
     queryKey: ["admin", "user", id],
-    queryFn: () => api.getUser(id),
+    queryFn: ({ signal }) => api.getUser(id, signal),
   });
 
   const monthRange = useMemo(() => {
@@ -49,16 +49,26 @@ export default function UserDetailPage() {
     return { from: format(from, "yyyy-MM-dd"), to: format(to, "yyyy-MM-dd") };
   }, [month]);
 
+  // Fire summary + day-detail in parallel with userQ rather than waiting
+  // on it. The backend already 404s on a bad user id, so gating these on
+  // userQ.data only created a wasted round-trip; in the common case (page
+  // load with a valid id) all three queries now race and complete together.
   const summaryQ = useQuery({
     queryKey: ["admin", "user", id, "summary", monthRange.from, monthRange.to],
-    queryFn: () => api.userDailySummary(id, monthRange.from, monthRange.to),
-    enabled: !!userQ.data,
+    queryFn: ({ signal }) => api.userDailySummary(id, monthRange.from, monthRange.to, signal),
+    staleTime: 30_000,
   });
 
   const dayQ = useQuery({
     queryKey: ["admin", "user", id, "day", format(day, "yyyy-MM-dd")],
-    queryFn: () => api.userDayDetails(id, format(day, "yyyy-MM-dd")),
-    enabled: !!userQ.data,
+    queryFn: ({ signal }) => api.userDayDetails(id, format(day, "yyyy-MM-dd"), signal),
+    staleTime: 30_000,
+  });
+
+  const holidaysQ = useQuery({
+    queryKey: ["admin", "holidays"],
+    queryFn: ({ signal }) => api.listHolidays(signal),
+    staleTime: 5 * 60_000,
   });
 
   if (userQ.isLoading) return <div className="text-sm text-slate-500 dark:text-slate-400">Loading…</div>;
@@ -123,6 +133,7 @@ export default function UserDetailPage() {
                 <CalendarGrid
                   month={month}
                   days={summaryQ.data?.days ?? []}
+                  holidays={holidaysQ.data?.holidays ?? []}
                   selected={day}
                   onSelect={(d) => { setDay(d); setTab("day"); }}
                 />

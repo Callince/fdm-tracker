@@ -53,7 +53,7 @@ export default function MeetingsPage() {
   const qc = useQueryClient();
   const meetingsQ = useQuery({
     queryKey: ["admin", "meetings"],
-    queryFn: () => api.listMeetings(),
+    queryFn: ({ signal }) => api.listMeetings(signal),
   });
 
   // null editing = create mode; otherwise pre-fill for edit
@@ -130,7 +130,10 @@ export default function MeetingsPage() {
       setErr("Invalid date/time");
       return;
     }
-    if (local.getTime() < Date.now() - 60_000) {
+    // Only block past times when creating a new meeting. When editing,
+    // admins legitimately need to fix the title / attendees of a meeting
+    // that has already started or finished.
+    if (!editing && local.getTime() < Date.now() - 60_000) {
       setErr("Pick the current time or a later one — past meetings can't be scheduled.");
       return;
     }

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { LiveTimer } from "@/components/LiveTimer";
 import { SessionLog } from "@/components/SessionLog";
 import { WeeklyStats } from "@/components/WeeklyStats";
+import { MonthlyStats } from "@/components/MonthlyStats";
 import { RangeTotals } from "@/components/RangeTotals";
 import { UpcomingMeetings } from "@/components/UpcomingMeetings";
 import { hms, relativeFromNow } from "@/lib/format";
@@ -187,13 +188,29 @@ export function Dashboard({ status }: Props) {
         <Card className="lg:col-span-2 dark:bg-slate-900 dark:border-slate-800">
           <CardHeader className="dark:border-slate-800">
             <div className="text-sm font-semibold">This week</div>
-            <div className="text-xs text-slate-500 dark:text-slate-400">Daily active hours.</div>
+            <div className="text-xs text-slate-500 dark:text-slate-400">
+              Daily active hours, Mon–Sun. Today is highlighted.
+            </div>
           </CardHeader>
           <CardBody>
             <WeeklyStats />
           </CardBody>
         </Card>
       </div>
+
+      {/* This month — every working day so far ----------------------------- */}
+      <Card className="dark:bg-slate-900 dark:border-slate-800">
+        <CardHeader className="dark:border-slate-800">
+          <div className="text-sm font-semibold">This month</div>
+          <div className="text-xs text-slate-500 dark:text-slate-400">
+            Daily active hours across every working day. Weekends and holidays
+            are dimmed.
+          </div>
+        </CardHeader>
+        <CardBody>
+          <MonthlyStats />
+        </CardBody>
+      </Card>
 
       <div className="text-xs text-slate-400 dark:text-slate-500 text-center pb-2">
         {status.last_sync_ok_at

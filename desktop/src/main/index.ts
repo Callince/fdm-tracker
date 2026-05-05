@@ -57,7 +57,7 @@ if (!gotLock) {
     // Global shortcut: Ctrl+Alt+B (Cmd+Alt+B on macOS) toggles break from anywhere.
     const shortcut = process.platform === "darwin" ? "Cmd+Alt+B" : "Ctrl+Alt+B";
     const registered = globalShortcut.register(shortcut, () => { void ipcOps.toggleBreak(); });
-    if (!registered) console.warn(`[shortcut] failed to register ${shortcut}`);
+    if (!registered) log.warn(`[shortcut] failed to register ${shortcut}`);
 
     // Resume tracking if we have saved credentials + device secret.
     const s = auth.get();
@@ -66,6 +66,9 @@ if (!gotLock) {
         ipcOps.pushStatus();
         void ipcOps.refreshTodayTotals();
       });
+      // Live tick: push status to the renderer on every idle sample (~10s)
+      // so today's active/idle/break totals never lag the live timer.
+      syncWorker.onSampleTick(() => ipcOps.pushStatus());
       // Restore an open session if one was persisted before the last quit,
       // so a crash / shutdown doesn't make the user manually click 'Start
       // work' again. Must run after syncWorker.start so setSession's bucket
@@ -103,7 +106,7 @@ if (!gotLock) {
   });
 
   app.on("before-quit", () => {
-    (globalThis as unknown as { __fdmQuitting?: boolean }).__fdmQuitting = true;
+    globalThis.__fdmQuitting = true;
     syncWorker.stop();
   });
 

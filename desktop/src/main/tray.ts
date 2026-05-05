@@ -64,7 +64,7 @@ export function rebuild(handlers: TrayHandlers) {
     {
       label: "Quit",
       click: () => {
-        (globalThis as unknown as { __fdmQuitting?: boolean }).__fdmQuitting = true;
+        globalThis.__fdmQuitting = true;
         app.quit();
       },
     },

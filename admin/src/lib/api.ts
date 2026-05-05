@@ -69,6 +69,8 @@ async function request<T>(
     headers.set("Content-Type", "application/json");
   }
 
+  // RequestInit.signal flows in via `init` when the caller passes it (used
+  // by TanStack Query queryFn cancellation on route change / refetch).
   const r = await fetch(`${BASE}${path}`, { ...init, headers });
 
   if (r.status === 401 && !isRetry) {
@@ -104,27 +106,28 @@ export const api = {
         email,
         password,
         device_label: "admin-web",
-        device_platform: "win32",
-        device_fingerprint: `admin-web-${navigator.userAgent.slice(0, 48)}`,
+        device_platform: "web",
+        device_fingerprint: auth.getDeviceId(),
       }),
     });
   },
 
   logout: () => request<void>("/auth/logout", { method: "POST" }),
 
-  listUsers: () =>
-    request<{ users: AdminUserRow[] }>("/admin/users"),
+  listUsers: (signal?: AbortSignal) =>
+    request<{ users: AdminUserRow[] }>("/admin/users", { signal }),
 
-  liveSnapshot: () =>
-    request<{ generated_at: string; users: AdminUserRow[] }>("/admin/activity/live"),
+  liveSnapshot: (signal?: AbortSignal) =>
+    request<{ generated_at: string; users: AdminUserRow[] }>("/admin/activity/live", { signal }),
 
-  overview: () => request<TeamOverview>("/admin/overview"),
+  overview: (signal?: AbortSignal) =>
+    request<TeamOverview>("/admin/overview", { signal }),
 
-  teamTrend: (fromDate: string, toDate: string) =>
-    request<TeamTrend>(`/admin/team-trend?from=${fromDate}&to=${toDate}`),
+  teamTrend: (fromDate: string, toDate: string, signal?: AbortSignal) =>
+    request<TeamTrend>(`/admin/team-trend?from=${fromDate}&to=${toDate}`, { signal }),
 
-  getUser: (id: string) =>
-    request<AdminUserDetail>(`/admin/users/${id}`),
+  getUser: (id: string, signal?: AbortSignal) =>
+    request<AdminUserDetail>(`/admin/users/${id}`, { signal }),
 
   createUser: (body: {
     name: string;
@@ -158,15 +161,16 @@ export const api = {
       body: JSON.stringify(body),
     }),
 
-  userDailySummary: (id: string, fromDate: string, toDate: string) =>
+  userDailySummary: (id: string, fromDate: string, toDate: string, signal?: AbortSignal) =>
     request<DailySummaryList>(
       `/admin/users/${id}/daily-summary?from=${fromDate}&to=${toDate}`,
+      { signal },
     ),
 
-  userDayDetails: (id: string, date: string) =>
-    request<DayDetail>(`/admin/users/${id}/day-details?date=${date}`),
+  userDayDetails: (id: string, date: string, signal?: AbortSignal) =>
+    request<DayDetail>(`/admin/users/${id}/day-details?date=${date}`, { signal }),
 
-  getSettings: () => request<OrgSettings>("/admin/settings"),
+  getSettings: (signal?: AbortSignal) => request<OrgSettings>("/admin/settings", { signal }),
 
   updateSettings: (body: OrgSettings) =>
     request<OrgSettings>("/admin/settings", {
@@ -201,7 +205,7 @@ export const api = {
     return r.blob();
   },
 
-  getMe: () => request<MeProfile>("/me"),
+  getMe: (signal?: AbortSignal) => request<MeProfile>("/me", { signal }),
 
   updateMe: (body: Partial<{ name: string; position: string | null; team_id: string | null; timezone: string }>) =>
     request<MeProfile>("/me", { method: "PATCH", body: JSON.stringify(body) }),
@@ -212,8 +216,8 @@ export const api = {
       body: JSON.stringify({ current_password: current, new_password: next }),
     }),
 
-  listTeams: () =>
-    request<{ teams: Team[] }>("/admin/teams"),
+  listTeams: (signal?: AbortSignal) =>
+    request<{ teams: Team[] }>("/admin/teams", { signal }),
 
   createTeam: (name: string) =>
     request<Team>("/admin/teams", { method: "POST", body: JSON.stringify({ name }) }),
@@ -225,8 +229,8 @@ export const api = {
     request<void>(`/admin/teams/${id}`, { method: "DELETE" }),
 
   // ---- Meetings ----
-  listMeetings: () =>
-    request<{ meetings: Meeting[] }>("/admin/meetings"),
+  listMeetings: (signal?: AbortSignal) =>
+    request<{ meetings: Meeting[] }>("/admin/meetings", { signal }),
 
   createMeeting: (body: MeetingInput) =>
     request<Meeting>("/admin/meetings", { method: "POST", body: JSON.stringify(body) }),
@@ -238,11 +242,18 @@ export const api = {
     request<void>(`/admin/meetings/${id}`, { method: "DELETE" }),
 
   // ---- Holidays ----
-  listHolidays: () =>
-    request<{ holidays: Holiday[] }>("/admin/holidays"),
+  listHolidays: (signal?: AbortSignal) =>
+    request<{ holidays: Holiday[] }>("/admin/holidays", { signal }),
 
   createHoliday: (body: { date: string; name: string; kind?: "holiday" | "working" }) =>
     request<Holiday>("/admin/holidays", { method: "POST", body: JSON.stringify(body) }),
+
+  /** Atomic upsert by date — replaces the prior delete-then-create pattern
+   * so an interrupted network can't leave the org with a missing holiday.
+   * Backend treats this as: if a holiday exists for `body.date`, update its
+   * name + kind; otherwise create one. */
+  upsertHoliday: (body: { date: string; name: string; kind?: "holiday" | "working" }) =>
+    request<Holiday>("/admin/holidays", { method: "PUT", body: JSON.stringify(body) }),
 
   deleteHoliday: (id: string) =>
     request<void>(`/admin/holidays/${id}`, { method: "DELETE" }),
