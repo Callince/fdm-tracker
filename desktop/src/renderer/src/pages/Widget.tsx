@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Maximize2, Minimize2, Pause, Play, Square, X } from "lucide-react";
+import { Maximize2, Minimize2, Minus, Pause, Play, Square, X } from "lucide-react";
 import type { AppStatus } from "@shared/types";
 import { LiveTimer } from "@/components/LiveTimer";
 import { hms } from "@/lib/format";
@@ -257,7 +257,15 @@ function Shell({
       <span className={`absolute left-0 top-0 h-full w-[3px] ${edgeColor}`} />
       {onSize && (
         <div
-          className="absolute top-1 right-1 flex items-center gap-0.5 no-drag opacity-0 group-hover:opacity-100 transition-opacity"
+          // Subtle at rest, full on hover. The previous opacity-0 made the
+          // controls invisible until the user happened to mouse over the
+          // exact pixel they live on — discoverability cliff.
+          // Icons:
+          //   Maximize2  — grow (mini/normal → max)
+          //   Minimize2  — restore (max → normal)
+          //   Minus      — collapse to mini-bar (normal/max → mini)
+          //   X          — hide the widget entirely
+          className="absolute top-1 right-1 flex items-center gap-0.5 no-drag opacity-50 group-hover:opacity-100 transition-opacity"
           style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
         >
           {size === "max" ? (
@@ -265,13 +273,13 @@ function Shell({
               <Minimize2 size={11} />
             </button>
           ) : (
-            <button type="button" onClick={() => onSize(size === "mini" ? "normal" : "max")} className="rounded p-0.5 text-slate-300 hover:text-white hover:bg-white/10" title="Maximize" aria-label="Maximize">
+            <button type="button" onClick={() => onSize(size === "mini" ? "normal" : "max")} className="rounded p-0.5 text-slate-300 hover:text-white hover:bg-white/10" title={size === "mini" ? "Restore" : "Maximize"} aria-label={size === "mini" ? "Restore" : "Maximize"}>
               <Maximize2 size={11} />
             </button>
           )}
           {size !== "mini" && (
-            <button type="button" onClick={() => onSize("mini")} className="rounded p-0.5 text-slate-300 hover:text-white hover:bg-white/10" title="Minimize" aria-label="Minimize">
-              <Minimize2 size={11} />
+            <button type="button" onClick={() => onSize("mini")} className="rounded p-0.5 text-slate-300 hover:text-white hover:bg-white/10" title="Collapse to bar" aria-label="Collapse to bar">
+              <Minus size={11} />
             </button>
           )}
           <button type="button" onClick={() => { void window.fdm.hideWidget(); }} className="rounded p-0.5 text-slate-300 hover:text-white hover:bg-white/10" title="Hide" aria-label="Hide widget">
