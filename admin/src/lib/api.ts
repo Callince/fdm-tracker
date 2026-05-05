@@ -104,8 +104,8 @@ export const api = {
         email,
         password,
         device_label: "admin-web",
-        device_platform: "win32",
-        device_fingerprint: `admin-web-${navigator.userAgent.slice(0, 48)}`,
+        device_platform: "web",
+        device_fingerprint: auth.getDeviceId(),
       }),
     });
   },

@@ -5,9 +5,11 @@
  */
 import Database from "better-sqlite3";
 import { app } from "electron";
+import * as Sentry from "@sentry/electron/main";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { log } from "./logger";
 
 let db: Database.Database | null = null;
 
@@ -20,6 +22,19 @@ function tryIntegrity(d: Database.Database): boolean {
   }
 }
 
+/** Best-effort recovery — VACUUM + REINDEX rebuilds the file in place and
+ * fixes most "corruption" that's actually just a partially-written page.
+ * Returns true if integrity_check passes after the rebuild. */
+function tryRecover(d: Database.Database): boolean {
+  try {
+    d.exec("REINDEX");
+    d.exec("VACUUM");
+    return tryIntegrity(d);
+  } catch {
+    return false;
+  }
+}
+
 function open(): Database.Database {
   if (db) return db;
   const dbPath = path.join(app.getPath("userData"), "buffer.sqlite");
@@ -27,20 +42,35 @@ function open(): Database.Database {
     db = new Database(dbPath);
     db.pragma("journal_mode = WAL");
     if (!tryIntegrity(db)) {
-      throw new Error("integrity_check failed");
+      // Try in-place repair before nuking. Most "corruption" we see in the
+      // wild is a half-written WAL frame after a hard reboot — VACUUM
+      // rewrites the main file from the b-tree and clears it.
+      log.warn("[localDb] integrity check failed; attempting recover");
+      if (tryRecover(db)) {
+        log.info("[localDb] recovered via VACUUM/REINDEX");
+        return db;
+      }
+      throw new Error("integrity_check failed and recovery did not succeed");
     }
   } catch (e) {
-    // DB is corrupt or unreadable. Quarantine it and start fresh — losing
+    // DB is corrupt or unreadable. Quarantine and start fresh — losing
     // unsynced buckets is far better than the app refusing to launch.
+    // Tell the user (toast) AND Sentry so we can spot patterns of corruption.
     try { db?.close(); } catch { /* ignore */ }
     db = null;
+    let quarantinePath: string | null = null;
     try {
       const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-      fs.renameSync(dbPath, `${dbPath}.corrupt-${stamp}`);
+      quarantinePath = `${dbPath}.corrupt-${stamp}`;
+      fs.renameSync(dbPath, quarantinePath);
     } catch { /* ignore */ }
     db = new Database(dbPath);
     db.pragma("journal_mode = WAL");
-    console.warn("[localDb] reset due to:", (e as Error).message);
+    const reason = (e as Error).message;
+    log.error("[localDb] reset due to:", reason, "quarantine=", quarantinePath);
+    try {
+      Sentry.captureMessage(`localDb reset: ${reason}`, "warning");
+    } catch { /* Sentry may not be initialised in dev */ }
   }
   db.exec(`
     CREATE TABLE IF NOT EXISTS activity_buckets (

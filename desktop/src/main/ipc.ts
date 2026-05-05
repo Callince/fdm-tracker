@@ -19,6 +19,8 @@ import { getMainWindow, showMainWindow } from "./windows";
 import { getWidgetWindow, hideWidget, toggleWidget, isWidgetVisible, setWidgetSize, type WidgetSize } from "./widget";
 import { rebuild as rebuildTray } from "./tray";
 import { notify } from "./notifications";
+import { isHttpUrl, rejectUnsafe } from "./urlSafety";
+import { log } from "./logger";
 
 let sessionActive = false;
 let currentSessionId: string | null = null;
@@ -187,19 +189,19 @@ let autoLockTimer: NodeJS.Timeout | null = null;
 function startNudgeMonitor() {
   if (!nudgeTimer) {
     nudgeTimer = setInterval(() => {
-      try { evaluateNudges(); } catch (e) { console.warn("[nudge]", (e as Error).message); }
+      try { evaluateNudges(); } catch (e) { log.warn("[nudge]", (e as Error).message); }
     }, 60_000);
   }
   if (!autoBreakTimer) {
     // Auto-break evaluation runs more often so "welcome back" fires within ~20s
     // of the user returning rather than making them wait a full minute.
     autoBreakTimer = setInterval(() => {
-      try { evaluateAutoBreak(); } catch (e) { console.warn("[auto-break]", (e as Error).message); }
+      try { evaluateAutoBreak(); } catch (e) { log.warn("[auto-break]", (e as Error).message); }
     }, 20_000);
   }
   if (!autoLockTimer) {
     autoLockTimer = setInterval(() => {
-      try { evaluateAutoLock(); } catch (e) { console.warn("[auto-lock]", (e as Error).message); }
+      try { evaluateAutoLock(); } catch (e) { log.warn("[auto-lock]", (e as Error).message); }
     }, 30_000);
   }
 }
@@ -224,7 +226,7 @@ function evaluateAutoLock() {
   autoLocking = true;
   void (async () => {
     try {
-      console.warn(`[auto-lock] idle ${idleSec}s ≥ ${p.autoLockMinutes}m — locking`);
+      log.warn(`[auto-lock] idle ${idleSec}s ≥ ${p.autoLockMinutes}m — locking`);
       // End any active session first so the gap doesn't keep counting as idle.
       if (sessionActive) await doEndWork();
       try { await api.logout(); } catch { /* ignore */ }
@@ -272,7 +274,7 @@ async function autoStartBreak() {
     autoBreakId = r.break_id;
     notify("Work auto-paused", "Idle for a while — FDM started a break. Move your mouse to resume.", showMainWindow);
   } catch (e) {
-    console.error("[auto-break:start]", e);
+    log.error("[auto-break:start]", e);
   }
   pushStatus();
   void refreshTodayTotals();
@@ -282,7 +284,7 @@ async function autoEndBreak() {
   if (!currentBreakId) return;
   const bid = currentBreakId;
   const now = new Date().toISOString();
-  try { await api.endBreak(bid, now); } catch (e) { console.error("[auto-break:end]", e); }
+  try { await api.endBreak(bid, now); } catch (e) { log.error("[auto-break:end]", e); }
   currentBreakId = null;
   currentBreakStartedAt = null;
   autoBreakId = null;
@@ -382,7 +384,7 @@ async function doStartWork() {
       started_at: currentSessionStartedAt,
     }));
   } catch (e) {
-    console.error("[work:start]", e);
+    log.error("[work:start]", e);
   }
   pushStatus();
   void refreshTodayTotals();
@@ -426,12 +428,12 @@ async function doEndWork() {
   // which is fine but skips the explicit attempt here. Doing it first means
   // the per-break duration is exactly what the user intended.
   if (currentBreakId) {
-    try { await api.endBreak(currentBreakId, now); } catch (e) { console.error("[work:end-break]", e); }
+    try { await api.endBreak(currentBreakId, now); } catch (e) { log.error("[work:end-break]", e); }
     currentBreakId = null;
     currentBreakStartedAt = null;
     autoBreakId = null;
   }
-  try { await api.endSession(sid, now); } catch (e) { console.error("[work:end]", e); }
+  try { await api.endSession(sid, now); } catch (e) { log.error("[work:end]", e); }
   sessionActive = false;
   currentSessionId = null;
   currentSessionStartedAt = null;
@@ -448,7 +450,7 @@ async function doStartBreak() {
     const r = await api.startBreak(currentSessionId, now);
     currentBreakId = r.break_id;
     currentBreakStartedAt = now;
-  } catch (e) { console.error("[break:start]", e); }
+  } catch (e) { log.error("[break:start]", e); }
   pushStatus();
   void refreshTodayTotals();
 }
@@ -462,7 +464,7 @@ async function doEndBreak() {
     await api.endBreak(bid, now);
     ok = true;
   } catch (e) {
-    console.error("[break:end]", e);
+    log.error("[break:end]", e);
   }
   // Only clear local state when the server confirmed the break ended. If
   // the API call failed, keep currentBreakId so the UI still shows
@@ -487,7 +489,7 @@ async function doEndBreakById(breakId: string) {
   }
   // Otherwise it's an orphaned row from a crashed session — close it server-side.
   const now = new Date().toISOString();
-  try { await api.endBreak(breakId, now); } catch (e) { console.error("[break:endById]", e); }
+  try { await api.endBreak(breakId, now); } catch (e) { log.error("[break:endById]", e); }
   pushStatus();
   void refreshTodayTotals();
 }
@@ -568,8 +570,11 @@ export function registerIpc() {
   });
 
   ipcMain.handle(IpcChannels.openExternal, async (_e, url: string) => {
-    if (!url) return;
-    if (!/^https?:\/\//i.test(url)) return;   // safety: only http(s)
+    if (typeof url !== "string" || !url) return;
+    if (!isHttpUrl(url)) {
+      rejectUnsafe(url, "non-http scheme or malformed URL");
+      return;
+    }
     void shell.openExternal(url);
   });
 

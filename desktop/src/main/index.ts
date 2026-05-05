@@ -57,7 +57,7 @@ if (!gotLock) {
     // Global shortcut: Ctrl+Alt+B (Cmd+Alt+B on macOS) toggles break from anywhere.
     const shortcut = process.platform === "darwin" ? "Cmd+Alt+B" : "Ctrl+Alt+B";
     const registered = globalShortcut.register(shortcut, () => { void ipcOps.toggleBreak(); });
-    if (!registered) console.warn(`[shortcut] failed to register ${shortcut}`);
+    if (!registered) log.warn(`[shortcut] failed to register ${shortcut}`);
 
     // Resume tracking if we have saved credentials + device secret.
     const s = auth.get();

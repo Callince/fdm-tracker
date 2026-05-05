@@ -16,6 +16,24 @@ export class ApiError extends Error {
   }
 }
 
+// Bound user-tweakable settings the server returns so a misbehaving (or
+// compromised) server can't disable idle detection or trigger weird
+// bucketing. Values outside the range are clamped to a safe default.
+const IDLE_MIN = 1;
+const IDLE_MAX = 30;
+const HOURS_MIN = 1;
+const HOURS_MAX = 24;
+
+function clampIdle(v: unknown): number {
+  const n = typeof v === "number" && Number.isFinite(v) ? v : 5;
+  return Math.min(IDLE_MAX, Math.max(IDLE_MIN, Math.round(n)));
+}
+
+function clampHours(v: unknown): number {
+  const n = typeof v === "number" && Number.isFinite(v) ? v : 8;
+  return Math.min(HOURS_MAX, Math.max(HOURS_MIN, n));
+}
+
 async function tryRefresh(): Promise<boolean> {
   const { refreshToken } = auth.get();
   if (!refreshToken) return false;
@@ -98,6 +116,8 @@ export const api = {
       },
       auth: false,
     });
+    const idle = clampIdle(data.idle_threshold_minutes);
+    const targetHours = clampHours(data.target_hours_per_day);
     auth.save({
       accessToken: data.tokens.access_token,
       refreshToken: data.tokens.refresh_token,
@@ -112,8 +132,8 @@ export const api = {
         team_id: data.team_id ?? null,
         team_name: data.team_name ?? null,
         timezone: data.timezone,
-        idle_threshold_minutes: data.idle_threshold_minutes,
-        target_hours_per_day: data.target_hours_per_day ?? 8,
+        idle_threshold_minutes: idle,
+        target_hours_per_day: targetHours,
       },
     });
     return {
@@ -121,8 +141,8 @@ export const api = {
       position: data.position ?? null,
       team_id: data.team_id ?? null,
       team_name: data.team_name ?? null,
-      timezone: data.timezone, idle_threshold_minutes: data.idle_threshold_minutes,
-      target_hours_per_day: data.target_hours_per_day ?? 8,
+      timezone: data.timezone, idle_threshold_minutes: idle,
+      target_hours_per_day: targetHours,
     };
   },
 

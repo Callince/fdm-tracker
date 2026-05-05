@@ -27,8 +27,11 @@ class PublicTeamListResponse(BaseModel):
 
 
 class TeamCreate(BaseModel):
-    name: str = Field(min_length=1, max_length=128)
+    # Single source of truth for team-name length. Old DB column is
+    # String(255) but the UI allotment is 50 chars; enforce that here so
+    # admin and public routes can't disagree.
+    name: str = Field(min_length=1, max_length=50)
 
 
 class TeamUpdate(BaseModel):
-    name: Optional[str] = Field(default=None, min_length=1, max_length=128)
+    name: Optional[str] = Field(default=None, min_length=1, max_length=50)

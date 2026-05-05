@@ -12,6 +12,7 @@ import { auth, prefs } from "./auth";
 import { log } from "./logger";
 import { notify } from "./notifications";
 import { showMainWindow } from "./windows";
+import { isMeetingUrl, rejectUnsafe } from "./urlSafety";
 
 interface UpcomingMeeting {
   id: string;
@@ -53,18 +54,28 @@ function check() {
       fired.add(key);
       const minutes = Math.max(0, Math.round(lead / 60_000));
       const lead_s = minutes === 0 ? "now" : `in ${minutes} min`;
-      const pwdSuffix = m.meeting_password ? `  ·  pwd: ${m.meeting_password}` : "";
+      // Never include the password in the notification body — system
+      // notifications are persisted to OS log centers and visible during
+      // screen-sharing. Show it only inside the in-app meeting view.
+      const hasPwd = !!m.meeting_password;
       const body = m.meeting_link
-        ? `Starts ${lead_s} — click to join${pwdSuffix}`
-        : `Starts ${lead_s}${pwdSuffix}`;
+        ? `Starts ${lead_s} — click to join${hasPwd ? " (password in app)" : ""}`
+        : `Starts ${lead_s}${hasPwd ? " (password in app)" : ""}`;
       log.info("[meeting-alarm] firing", { id: m.id, title: m.title, lead, sound: p.meetingAlarmEnabled });
       notify({
         title: m.title,
         body,
         sound: p.meetingAlarmEnabled,
         onClick: () => {
-          if (m.meeting_link) void shell.openExternal(m.meeting_link);
-          else showMainWindow();
+          // Only open links to known meeting hosts — server-supplied URLs
+          // are otherwise treated as untrusted (file://, custom protocol
+          // handlers etc. would be a remote-code-execution vector).
+          if (m.meeting_link && isMeetingUrl(m.meeting_link)) {
+            void shell.openExternal(m.meeting_link);
+          } else {
+            if (m.meeting_link) rejectUnsafe(m.meeting_link, "meeting link not on allowlist");
+            showMainWindow();
+          }
         },
       });
       try { showMainWindow(); } catch { /* ignore */ }

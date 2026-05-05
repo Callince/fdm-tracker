@@ -13,6 +13,7 @@ import { config } from "./config";
 import { idleMonitor, type Sample } from "./idleMonitor";
 import { inputCounter } from "./inputCounter";
 import { localDb } from "./localDb";
+import { log } from "./logger";
 
 type OnStatus = (msg: { online: boolean; lastOkAt: string | null; lastError: string | null; pending: number }) => void;
 
@@ -108,7 +109,7 @@ async function drainToServer() {
     lastError = null;
     backoff = 0;
     if (res.rejected > 0) {
-      console.warn("[sync] server rejected", res.rejected, res.reasons.slice(0, 3));
+      log.warn("[sync] server rejected", res.rejected, res.reasons.slice(0, 3));
     }
     emitStatus(true);
   } catch (e) {

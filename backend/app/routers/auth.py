@@ -250,7 +250,10 @@ def login(
 @router.post(
     "/refresh",
     response_model=RefreshResponse,
-    dependencies=[Depends(rate_limit("refresh", per_minute=10, per_hour=100))],
+    # Tight limit: a normal client only refreshes when the access token
+    # expires (~12h). 3/min still leaves slack for brief network blips
+    # without enabling token-rotation abuse from a leaked refresh token.
+    dependencies=[Depends(rate_limit("refresh", per_minute=3, per_hour=30))],
 )
 def refresh(
     req: RefreshRequest,

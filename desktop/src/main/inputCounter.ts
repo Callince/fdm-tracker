@@ -10,6 +10,8 @@
  * missing native binding, etc.), counters stay at zero and the tracker
  * still works — it just only reports OS-level idle/active.
  */
+import { log } from "./logger";
+
 let uiohook: typeof import("uiohook-napi").uIOhook | null = null;
 let started = false;
 
@@ -24,7 +26,7 @@ function tryLoad(): boolean {
     uiohook = mod.uIOhook;
     return true;
   } catch (e) {
-    console.warn("[inputCounter] uiohook unavailable:", (e as Error).message);
+    log.warn("[inputCounter] uiohook unavailable:", (e as Error).message);
     return false;
   }
 }
@@ -42,7 +44,7 @@ export const inputCounter = {
       started = true;
       return true;
     } catch (e) {
-      console.warn("[inputCounter] failed to start:", (e as Error).message);
+      log.warn("[inputCounter] failed to start:", (e as Error).message);
       return false;
     }
   },

@@ -21,6 +21,10 @@ engine = create_engine(
     pool_recycle=300,
     pool_size=10,
     max_overflow=20,
+    # Fail fast when the pool is exhausted instead of hanging the request
+    # forever. 30s gives a slow-but-recovering DB time to free a slot but
+    # surfaces a 5xx (retryable) instead of a request timeout from upstream.
+    pool_timeout=30,
     future=True,
     connect_args={"keepalives": 1, "keepalives_idle": 30, "keepalives_interval": 10, "keepalives_count": 3},
 )
