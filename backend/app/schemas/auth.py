@@ -11,7 +11,7 @@ class LoginRequest(BaseModel):
     email: EmailStr
     password: str = Field(min_length=1, max_length=256)
     device_label: str = Field(min_length=1, max_length=255)
-    device_platform: Literal["darwin", "win32", "linux"]
+    device_platform: Literal["darwin", "win32", "linux", "web"]
     device_fingerprint: str = Field(min_length=8, max_length=128)
 
 
