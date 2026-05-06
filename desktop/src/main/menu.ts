@@ -39,6 +39,14 @@ export function buildAppMenu(opts: { onAbout: () => void }): Menu {
     ],
   };
 
+  // zoomIn role's default accelerator is "CmdOrCtrl+Plus", which on US/UK
+  // layouts physically requires Ctrl+Shift+= — so Ctrl+= alone never fires.
+  // Bind Ctrl+= explicitly (and add invisible aliases for Ctrl++ and the
+  // numpad +) so all the natural "make it bigger" combos zoom in.
+  const zoomInAccel = isMac ? "Cmd+=" : "Ctrl+=";
+  const zoomInPlusAccel = isMac ? "Cmd+Shift+=" : "Ctrl+Shift+=";
+  const zoomInNumAccel = isMac ? "Cmd+numadd" : "Ctrl+numadd";
+
   const viewMenu: MenuItemConstructorOptions = {
     label: "View",
     submenu: [
@@ -46,7 +54,9 @@ export function buildAppMenu(opts: { onAbout: () => void }): Menu {
       { role: "forceReload" },
       { type: "separator" },
       { role: "resetZoom" },
-      { role: "zoomIn" },
+      { label: "Zoom In", accelerator: zoomInAccel, role: "zoomIn" },
+      { label: "Zoom In", accelerator: zoomInPlusAccel, role: "zoomIn", visible: false, acceleratorWorksWhenHidden: true },
+      { label: "Zoom In", accelerator: zoomInNumAccel, role: "zoomIn", visible: false, acceleratorWorksWhenHidden: true },
       { role: "zoomOut" },
       { type: "separator" },
       { role: "togglefullscreen" },
@@ -59,7 +69,7 @@ export function buildAppMenu(opts: { onAbout: () => void }): Menu {
     submenu: [
       {
         label: "Show main window",
-        accelerator: isMac ? "Cmd+0" : "Ctrl+0",
+        accelerator: isMac ? "Cmd+Shift+H" : "Ctrl+Shift+H",
         click: () => showMainWindow(),
       },
       {

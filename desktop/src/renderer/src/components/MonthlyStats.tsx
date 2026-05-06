@@ -4,12 +4,6 @@ import { hms } from "@/lib/format";
 import { Skeleton } from "@/components/Skeleton";
 import type { DailySummary, Holiday } from "@shared/types";
 
-/**
- * "This month" daily-active bar chart. Shows every day from the 1st of
- * the current month through today. Weekends + admin-marked holidays are
- * dimmed; admin "working" overrides recolor a weekend back into a normal
- * working day. Today is highlighted.
- */
 export function MonthlyStats() {
   const [days, setDays] = useState<DailySummary[]>([]);
   const [holidays, setHolidays] = useState<Holiday[]>([]);
@@ -40,7 +34,7 @@ export function MonthlyStats() {
       .finally(() => setLoading(false));
   }, []);
 
-  const { bars, totalActive, workingDayCount, totalWorkingDayCount } = useMemo(() => {
+  const { bars, totalActive, workingDayCount, totalWorkingDayCount, maxScale } = useMemo(() => {
     const today = new Date();
     const monthStart = startOfMonth(today);
     const monthEnd = endOfMonth(today);
@@ -62,8 +56,6 @@ export function MonthlyStats() {
         dayNum: format(d, "d"),
         active: summary?.total_active_seconds ?? 0,
         isToday: isSameDay(d, today),
-        // Day-start comparison is DST-safe — a clock jump at 02:00 won't
-        // suddenly flip a day into "future".
         isFuture: startOfDay(d).getTime() > todayStart,
         isOff,
         holidayName: holiday?.name,
@@ -73,73 +65,99 @@ export function MonthlyStats() {
     const totalActive = bars.reduce((a, b) => a + b.active, 0);
     const workingDayCount = bars.filter((b) => !b.isOff && !b.isFuture).length;
     const totalWorkingDayCount = bars.filter((b) => !b.isOff).length;
-    return { bars, totalActive, workingDayCount, totalWorkingDayCount };
-  }, [days, holidays]);
-
-  // Use a sensible scale: target hours/day if known, else max active in range.
-  const maxScale = useMemo(() => {
     const max = bars.reduce((m, b) => Math.max(m, b.active), 0);
-    // Round up to the nearest hour for cleaner bars.
-    const seconds = Math.max(max, 3600);
-    return Math.ceil(seconds / 3600) * 3600;
-  }, [bars]);
+    const maxScale = Math.max(3600, Math.ceil(max / 3600) * 3600);
+    return { bars, totalActive, workingDayCount, totalWorkingDayCount, maxScale };
+  }, [days, holidays]);
 
   if (loading) {
     return (
       <div className="space-y-2">
-        <div className="flex items-baseline justify-between">
-          <Skeleton className="h-4 w-24" />
-          <Skeleton className="h-3 w-28" />
-        </div>
-        <div className="flex items-end gap-1 h-24">
-          {Array.from({ length: 30 }).map((_, i) => (
-            <div key={i} className="flex-1 flex flex-col items-center gap-1 min-w-0">
-              <Skeleton className="w-full" style={{ height: `${30 + ((i * 17) % 60)}%` } as React.CSSProperties} />
-            </div>
-          ))}
-        </div>
+        <Skeleton className="h-4 w-48" />
+        <Skeleton className="h-44 w-full" />
       </div>
     );
   }
 
+  const maxHours = Math.round(maxScale / 3600);
+  const gridLines = [1, 0.66, 0.33, 0];
+
   return (
-    <div className="space-y-2">
-      <div className="flex items-baseline justify-between">
+    <div className="space-y-3">
+      <div className="flex items-baseline justify-between flex-wrap gap-2">
         <div className="text-xs text-slate-500 dark:text-slate-400">
-          total active <span className="text-active font-medium">{hms(totalActive)}</span>
+          total active <span className="text-active font-semibold tabular-nums">{hms(totalActive)}</span>
           <span className="ml-2 text-slate-400 dark:text-slate-500">
             · {workingDayCount} / {totalWorkingDayCount} working days so far
           </span>
         </div>
+        <div className="flex items-center gap-3 text-[10px] text-slate-500 dark:text-slate-400">
+          <span className="flex items-center gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-sm bg-active inline-block" /> Today
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-sm bg-active/70 inline-block" /> Working day
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-sm bg-slate-300 dark:bg-slate-700 inline-block" /> Off-day
+          </span>
+        </div>
       </div>
-      <div className="flex items-end gap-1 h-24">
-        {bars.map((b) => {
-          const heightPct = (b.active / maxScale) * 100;
-          const barCls = b.isOff
-            ? "bg-slate-300/70 dark:bg-slate-700"
-            : b.isToday
-              ? "bg-active"
-              : "bg-active/70 hover:bg-active";
-          return (
-            <div key={b.iso} className="flex-1 flex flex-col items-center gap-1 min-w-0">
-              <div className="relative w-full h-full flex items-end">
-                {b.isFuture ? (
-                  <div className="w-full h-1 rounded border border-dashed border-slate-300 dark:border-slate-700" />
-                ) : (
-                  <div
-                    className={`w-full rounded transition-colors ${barCls} ${b.isToday ? "ring-2 ring-active/40" : ""}`}
-                    style={{ height: `${heightPct}%`, minHeight: b.active > 0 ? 2 : 0 }}
-                    title={
-                      b.holidayName
-                        ? `${b.holidayName} · ${hms(b.active)}`
-                        : `${format(b.date, "EEE d MMM")} · ${hms(b.active)}`
-                    }
-                  />
-                )}
-              </div>
-              {/* Render the day-of-month every 5th bar so labels don't clutter
-                  on long months; today always gets a label. */}
-              {(b.isToday || Number(b.dayNum) % 5 === 0 || b.dayNum === "1") ? (
+
+      <div className="flex gap-2">
+        <div className="flex flex-col justify-between text-[10px] text-slate-400 dark:text-slate-600 tabular-nums h-44 py-0.5 select-none">
+          <span>{maxHours}h</span>
+          <span>{(maxHours * 0.66).toFixed(maxHours >= 3 ? 0 : 1)}h</span>
+          <span>{(maxHours * 0.33).toFixed(maxHours >= 3 ? 0 : 1)}h</span>
+          <span>0h</span>
+        </div>
+        <div className="relative flex-1 h-44">
+          {gridLines.map((g) => (
+            <div
+              key={g}
+              className="absolute left-0 right-0 border-t border-dashed border-slate-200 dark:border-slate-800"
+              style={{ top: `${(1 - g) * 100}%` }}
+            />
+          ))}
+          <div className="absolute inset-0 flex items-end gap-[3px] px-1">
+            {bars.map((b) => {
+              const heightPct = Math.min(100, (b.active / maxScale) * 100);
+              const barCls = b.isOff
+                ? "bg-slate-300/70 dark:bg-slate-700"
+                : b.isToday
+                  ? "bg-active"
+                  : "bg-active/70 hover:bg-active";
+              return (
+                <div key={b.iso} className="flex-1 flex items-end h-full min-w-0">
+                  {b.isFuture ? (
+                    <div className="w-full h-1 self-end rounded border border-dashed border-slate-300 dark:border-slate-700" />
+                  ) : (
+                    <div
+                      className={`w-full rounded-t transition-colors ${barCls} ${
+                        b.isToday ? "ring-2 ring-active/40" : ""
+                      }`}
+                      style={{ height: `${heightPct}%`, minHeight: b.active > 0 ? 3 : 0 }}
+                      title={
+                        b.holidayName
+                          ? `${b.holidayName} · ${hms(b.active)}`
+                          : `${format(b.date, "EEE d MMM")} · ${hms(b.active)}`
+                      }
+                    />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* X-axis: every 5th day plus 1 + today */}
+      <div className="flex gap-2 pl-7">
+        <div className="flex-1 flex gap-[3px] px-1">
+          {bars.map((b) => {
+            const showLabel = b.isToday || b.dayNum === "1" || Number(b.dayNum) % 5 === 0;
+            return (
+              <div key={b.iso} className="flex-1 text-center min-w-0">
                 <span
                   className={`text-[9px] tabular-nums ${
                     b.isToday
@@ -147,16 +165,14 @@ export function MonthlyStats() {
                       : b.isOff
                         ? "text-slate-400 dark:text-slate-600"
                         : "text-slate-500 dark:text-slate-400"
-                  }`}
+                  } ${showLabel ? "" : "invisible"}`}
                 >
                   {b.dayNum}
                 </span>
-              ) : (
-                <span className="text-[9px] text-transparent">·</span>
-              )}
-            </div>
-          );
-        })}
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
