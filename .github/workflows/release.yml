@@ -15,7 +15,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: windows-latest
+          # Pin windows-2022 (not windows-latest) — the rolling latest image
+          # now points at windows-2025, where node-gyp can't locate Visual
+          # Studio Build Tools and the uiohook-napi rebuild fails. v0.4.1
+          # broke on this; pinning keeps the runner image stable.
+          - os: windows-2022
             target: dist:win
             artifact: "*.exe"
           - os: macos-latest
