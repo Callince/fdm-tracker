@@ -4,12 +4,6 @@ import { hms } from "@/lib/format";
 import { Skeleton } from "@/components/Skeleton";
 import type { DailySummary, Holiday } from "@shared/types";
 
-/**
- * "This week" daily-active bar chart. Shows the **current ISO week**
- * (Mon → Sun) so the bars don't shift mid-week the way a rolling-7-day
- * view does. Today is highlighted; weekends + admin-marked holidays are
- * dimmed so the user can read working vs off days at a glance.
- */
 export function WeeklyStats() {
   const [days, setDays] = useState<DailySummary[]>([]);
   const [holidays, setHolidays] = useState<Holiday[]>([]);
@@ -20,8 +14,6 @@ export function WeeklyStats() {
     const from = startOfWeek(today, { weekStartsOn: 1 });
     const to = endOfWeek(today, { weekStartsOn: 1 });
     setLoading(true);
-    // Guard against the renderer rendering before preload finishes wiring
-    // window.fdm — happens briefly on cold start and in unit tests.
     const fdm = typeof window !== "undefined" ? window.fdm : undefined;
     if (!fdm) {
       setLoading(false);
@@ -42,7 +34,7 @@ export function WeeklyStats() {
       .finally(() => setLoading(false));
   }, []);
 
-  const { totalActive, maxActive, bars } = useMemo(() => {
+  const { totalActive, maxScale, bars } = useMemo(() => {
     const today = new Date();
     const weekStart = startOfWeek(today, { weekStartsOn: 1 });
     const summaryByIso = new Map(days.map((d) => [d.date, d]));
@@ -60,12 +52,10 @@ export function WeeklyStats() {
       return {
         date: d,
         iso,
-        label: format(d, "EEEEE"), // single-letter day
+        label: format(d, "EEEEE"),
         dayNum: format(d, "d"),
         active: summary?.total_active_seconds ?? 0,
         isToday: isSameDay(d, today),
-        // Compare day-starts so a DST jump at 02:00 doesn't mis-classify
-        // a day as past or future.
         isFuture: startOfDay(d).getTime() > todayStart,
         isOff,
         holidayName: holiday?.name,
@@ -73,74 +63,112 @@ export function WeeklyStats() {
     });
 
     const totalActive = bars.reduce((a, b) => a + b.active, 0);
-    const maxActive = bars.reduce((m, b) => Math.max(m, b.active), 1);
-    return { totalActive, maxActive, bars };
+    const max = bars.reduce((m, b) => Math.max(m, b.active), 0);
+    // Round up to the nearest hour, minimum 1h, so axis labels stay clean.
+    const maxScale = Math.max(3600, Math.ceil(max / 3600) * 3600);
+    return { totalActive, maxScale, bars };
   }, [days, holidays]);
 
   if (loading) {
     return (
       <div className="space-y-2">
-        <div className="flex items-baseline justify-between">
-          <Skeleton className="h-4 w-20" />
-          <Skeleton className="h-3 w-24" />
-        </div>
-        <div className="flex items-end gap-2 h-16">
-          {Array.from({ length: 7 }).map((_, i) => (
-            <div key={i} className="flex-1 flex flex-col items-center gap-1">
-              <Skeleton className="w-full" style={{ height: `${20 + Math.random() * 60}%` } as React.CSSProperties} />
-              <Skeleton className="h-2 w-2" />
-            </div>
-          ))}
-        </div>
+        <Skeleton className="h-4 w-32" />
+        <Skeleton className="h-40 w-full" />
       </div>
     );
   }
 
+  const maxHours = Math.round(maxScale / 3600);
+  const gridLines = [1, 0.5, 0]; // top, mid, bottom
+
   return (
-    <div className="space-y-2">
-      <div className="flex items-baseline justify-between">
-        <div className="text-xs text-slate-500 dark:text-slate-400">
-          total active <span className="text-active font-medium">{hms(totalActive)}</span>
+    <div className="space-y-3">
+      <div className="text-xs text-slate-500 dark:text-slate-400">
+        total active <span className="text-active font-semibold tabular-nums">{hms(totalActive)}</span>
+      </div>
+
+      {/* Chart */}
+      <div className="flex gap-2">
+        {/* Y-axis */}
+        <div className="flex flex-col justify-between text-[10px] text-slate-400 dark:text-slate-600 tabular-nums h-40 py-0.5 select-none">
+          <span>{maxHours}h</span>
+          <span>{(maxHours / 2).toFixed(maxHours % 2 === 0 ? 0 : 1)}h</span>
+          <span>0h</span>
+        </div>
+
+        {/* Plot */}
+        <div className="relative flex-1 h-40">
+          {/* Gridlines */}
+          {gridLines.map((g) => (
+            <div
+              key={g}
+              className="absolute left-0 right-0 border-t border-dashed border-slate-200 dark:border-slate-800"
+              style={{ top: `${(1 - g) * 100}%` }}
+            />
+          ))}
+          {/* Bars */}
+          <div className="absolute inset-0 flex items-end gap-2 px-1">
+            {bars.map((b) => {
+              const heightPct = Math.min(100, (b.active / maxScale) * 100);
+              const barCls = b.isOff
+                ? "bg-slate-300/70 dark:bg-slate-700"
+                : b.isToday
+                  ? "bg-active"
+                  : "bg-active/70 hover:bg-active";
+              return (
+                <div key={b.iso} className="flex-1 flex flex-col items-center justify-end h-full min-w-0 group">
+                  {b.isFuture ? (
+                    <div className="w-full max-w-[44px] h-1 rounded border border-dashed border-slate-300 dark:border-slate-700" />
+                  ) : (
+                    <>
+                      {/* Value label above the bar */}
+                      {b.active > 0 && (
+                        <div
+                          className={`text-[10px] tabular-nums mb-1 ${
+                            b.isToday
+                              ? "text-active font-semibold"
+                              : b.isOff
+                                ? "text-slate-400"
+                                : "text-slate-500 dark:text-slate-400"
+                          }`}
+                        >
+                          {(b.active / 3600).toFixed(1)}h
+                        </div>
+                      )}
+                      <div
+                        className={`w-full max-w-[44px] rounded-t-md transition-colors ${barCls} ${
+                          b.isToday ? "ring-2 ring-active/40" : ""
+                        }`}
+                        style={{ height: `${heightPct}%`, minHeight: b.active > 0 ? 4 : 0 }}
+                        title={b.holidayName ? `${b.holidayName} · ${hms(b.active)}` : hms(b.active)}
+                      />
+                    </>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
-      <div className="flex items-end gap-2 h-20">
-        {bars.map((b) => {
-          const heightPct = (b.active / maxActive) * 100;
-          // Weekends / holidays use a muted color so they read as "off" even
-          // when there's a small amount of logged time. Today gets the full
-          // saturation. Future days render as a faint outline only.
-          const barCls = b.isOff
-            ? "bg-slate-300/70 dark:bg-slate-700"
-            : b.isToday
-              ? "bg-active"
-              : "bg-active/70 hover:bg-active";
-          return (
-            <div key={b.iso} className="flex-1 flex flex-col items-center gap-1 min-w-0">
-              <div className="relative w-full h-full flex items-end">
-                {b.isFuture ? (
-                  <div className="w-full h-1 rounded border border-dashed border-slate-300 dark:border-slate-700" />
-                ) : (
-                  <div
-                    className={`w-full rounded transition-colors ${barCls} ${b.isToday ? "ring-2 ring-active/40" : ""}`}
-                    style={{ height: `${heightPct}%`, minHeight: b.active > 0 ? 2 : 0 }}
-                    title={b.holidayName ? `${b.holidayName} · ${hms(b.active)}` : hms(b.active)}
-                  />
-                )}
-              </div>
-              <span
-                className={`text-[10px] tabular-nums ${
-                  b.isToday
-                    ? "text-active font-semibold"
-                    : b.isOff
-                      ? "text-slate-400 dark:text-slate-600"
-                      : "text-slate-500 dark:text-slate-400"
-                }`}
-              >
-                {b.label}
-              </span>
+
+      {/* X-axis labels */}
+      <div className="flex gap-2 pl-7">
+        <div className="flex-1 flex gap-2 px-1">
+          {bars.map((b) => (
+            <div
+              key={b.iso}
+              className={`flex-1 text-center text-[10px] tabular-nums ${
+                b.isToday
+                  ? "text-active font-semibold"
+                  : b.isOff
+                    ? "text-slate-400 dark:text-slate-600"
+                    : "text-slate-500 dark:text-slate-400"
+              }`}
+            >
+              {b.label}
             </div>
-          );
-        })}
+          ))}
+        </div>
       </div>
     </div>
   );

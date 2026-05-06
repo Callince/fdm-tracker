@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { format, startOfMonth, startOfWeek } from "date-fns";
+import { endOfMonth, endOfWeek, format, startOfMonth, startOfWeek } from "date-fns";
 import { hms } from "@/lib/format";
 
 interface ApiTotals {
@@ -26,8 +26,15 @@ export function RangeTotals() {
 
   useEffect(() => {
     const today = new Date();
-    void fetchRange(startOfWeek(today, { weekStartsOn: 1 }), today).then(setWeek);
-    void fetchRange(startOfMonth(today), today).then(setMonth);
+    // Fetch through end-of-week / end-of-month (not just today) so the
+    // backend's `working_days` count reflects every working day in the
+    // period — i.e. the target is "8h × all 5 weekdays" not "8h × elapsed
+    // days only". Future days have zero activity so totals are unaffected.
+    void fetchRange(
+      startOfWeek(today, { weekStartsOn: 1 }),
+      endOfWeek(today, { weekStartsOn: 1 }),
+    ).then(setWeek);
+    void fetchRange(startOfMonth(today), endOfMonth(today)).then(setMonth);
   }, []);
 
   return (
@@ -40,11 +47,12 @@ export function RangeTotals() {
 
 function RangeCard({ label, data, kind }: { label: string; data: ApiTotals | null; kind: "week" | "month" }) {
   const today = new Date();
-  // Backend tells us the count of Mon-Fri days in the range minus admin-marked
-  // holidays. Fallback for older API responses: count weekdays locally.
+  // Fallback when the API call hasn't returned yet: count every weekday in
+  // the full week / full month so the displayed target matches what the
+  // backend will return.
   const fallbackWorkingDays = kind === "week"
-    ? Math.min(5, Math.floor((today.getTime() - startOfWeek(today, { weekStartsOn: 1 }).getTime()) / 86400000) + 1)
-    : countWeekdaysFrom(startOfMonth(today), today);
+    ? countWeekdaysFrom(startOfWeek(today, { weekStartsOn: 1 }), endOfWeek(today, { weekStartsOn: 1 }))
+    : countWeekdaysFrom(startOfMonth(today), endOfMonth(today));
   const workingDays = data?.working_days ?? fallbackWorkingDays;
   const target = data?.target_hours_per_day ?? 8;
   const targetSec = target * 3600 * workingDays;

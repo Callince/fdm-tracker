@@ -37,6 +37,10 @@ class MeProfile(BaseModel):
     team_id: Optional[uuid.UUID]
     team_name: Optional[str]
     timezone: str
+    # Org-level settings: must be returned here too (not just on /auth/login)
+    # so the desktop client picks up admin changes without forcing re-login.
+    idle_threshold_minutes: int
+    target_hours_per_day: int
 
 
 class MeUpdate(BaseModel):
@@ -51,7 +55,7 @@ class MePasswordChange(BaseModel):
     new_password: str = Field(min_length=8, max_length=256)
 
 
-def _profile(user, team_name: str | None = None) -> MeProfile:  # type: ignore[no-untyped-def]
+def _profile(user, team_name: str | None = None, settings: OrgSettings | None = None) -> MeProfile:  # type: ignore[no-untyped-def]
     return MeProfile(
         user_id=str(user.id),
         name=user.name,
@@ -61,7 +65,13 @@ def _profile(user, team_name: str | None = None) -> MeProfile:  # type: ignore[n
         team_id=user.team_id,
         team_name=team_name,
         timezone=user.timezone,
+        idle_threshold_minutes=settings.idle_threshold_minutes if settings else 5,
+        target_hours_per_day=settings.target_hours_per_day if settings else 8,
     )
+
+
+def _load_settings(db: Session) -> OrgSettings | None:
+    return db.execute(select(OrgSettings).limit(1)).scalar_one_or_none()
 
 
 def _team_name(db: Session, team_id: uuid.UUID | None) -> str | None:
@@ -77,7 +87,7 @@ def me_profile(
     db: Annotated[Session, Depends(get_db)],
 ) -> MeProfile:
     user, _ = current
-    return _profile(user, _team_name(db, user.team_id))
+    return _profile(user, _team_name(db, user.team_id), _load_settings(db))
 
 
 @router.patch("", response_model=MeProfile)
@@ -102,7 +112,7 @@ def me_update(
         user.team_id = body.team_id
     db.commit()
     db.refresh(user)
-    return _profile(user, _team_name(db, user.team_id))
+    return _profile(user, _team_name(db, user.team_id), _load_settings(db))
 
 
 @router.post("/password", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
