@@ -72,21 +72,13 @@ function computeTodayTotals(): { active: number; idle: number; brk: number } {
   const a = auth.get();
   if (!a.profile) return { active: 0, idle: 0, brk: 0 };
   const tz = a.profile.timezone;
-  let active = 0;
-  let idle = 0;
-  try {
-    const localDate = formatInTimeZone(new Date(), tz, "yyyy-MM-dd");
-    const dayStart = fromZonedTime(`${localDate} 00:00:00`, tz).toISOString();
-    const dayEnd = fromZonedTime(`${localDate} 23:59:59.999`, tz).toISOString();
-    const flushed = localDb.todayBucketTotals(dayStart, dayEnd);
-    const live = syncWorker.currentBucketAccum();
-    active = flushed.active_seconds + Math.floor(live.active);
-    idle = flushed.idle_seconds + Math.floor(live.idle);
-  } catch {
-    // localDb / tz issue — fall through with zeros so the UI doesn't crash.
-  }
-  // Break time = sum over today's break entries; an open break uses `now`.
+
+  // Build today's break ranges first — both for the break total and to
+  // exclude bucket time that fell inside a break (older client builds kept
+  // ticking buckets during break, which inflates active/idle on the
+  // dashboard until those buckets age out).
   const now = Date.now();
+  const breakRanges: Array<[number, number]> = [];
   let brk = 0;
   for (const e of todayEntries) {
     if (e.kind !== "break") continue;
@@ -94,9 +86,43 @@ function computeTodayTotals(): { active: number; idle: number; brk: number } {
     if (Number.isNaN(start)) continue;
     const end = e.ended_at ? Date.parse(e.ended_at) : now;
     if (Number.isNaN(end) || end <= start) continue;
+    breakRanges.push([start, end]);
     brk += Math.floor((end - start) / 1000);
   }
-  return { active, idle, brk };
+
+  let active = 0;
+  let idle = 0;
+  try {
+    const localDate = formatInTimeZone(new Date(), tz, "yyyy-MM-dd");
+    const dayStart = fromZonedTime(`${localDate} 00:00:00`, tz).toISOString();
+    const dayEnd = fromZonedTime(`${localDate} 23:59:59.999`, tz).toISOString();
+    const buckets = localDb.todayBuckets(dayStart, dayEnd);
+    const bucketMs = 60_000;
+    for (const b of buckets) {
+      const bs = Date.parse(b.bucket_start);
+      if (Number.isNaN(bs)) continue;
+      const be = bs + bucketMs;
+      const total = b.active_seconds + b.idle_seconds;
+      if (total <= 0) continue;
+      let overlapMs = 0;
+      for (const [rs, re] of breakRanges) {
+        const o = Math.min(re, be) - Math.max(rs, bs);
+        if (o > 0) overlapMs += o;
+      }
+      const overlapSec = Math.min(total, Math.round(overlapMs / 1000));
+      // Pro-rate the in-break time across active and idle so each bucket
+      // contributes only its non-break share.
+      const factor = (total - overlapSec) / total;
+      active += b.active_seconds * factor;
+      idle += b.idle_seconds * factor;
+    }
+    const live = syncWorker.currentBucketAccum();
+    active += live.active;
+    idle += live.idle;
+  } catch {
+    // localDb / tz issue — fall through with zeros so the UI doesn't crash.
+  }
+  return { active: Math.floor(active), idle: Math.floor(idle), brk };
 }
 
 function status(): AppStatus {

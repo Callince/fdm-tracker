@@ -183,6 +183,20 @@ export const localDb = {
     return { active_seconds: r.a, idle_seconds: r.i };
   },
 
+  /** Return individual buckets in [fromIso, toIso) so callers can do their
+   * own per-bucket reconciliation (e.g. subtract bucket time that overlaps
+   * a break entry — those bucket seconds were recorded while the user was
+   * paused and shouldn't count toward active/idle on the dashboard). */
+  todayBuckets(fromIso: string, toIso: string): Array<{ bucket_start: string; active_seconds: number; idle_seconds: number }> {
+    return open()
+      .prepare(
+        `SELECT bucket_start, active_seconds, idle_seconds
+         FROM activity_buckets
+         WHERE bucket_start >= ? AND bucket_start < ?`,
+      )
+      .all(fromIso, toIso) as Array<{ bucket_start: string; active_seconds: number; idle_seconds: number }>;
+  },
+
   getState(k: string): string | null {
     const r = open().prepare(`SELECT v FROM state WHERE k = ?`).get(k) as { v: string } | undefined;
     return r?.v ?? null;
