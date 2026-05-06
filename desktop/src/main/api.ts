@@ -247,6 +247,8 @@ export const api = {
       role: "user" | "admin"; position: string | null;
       team_id: string | null; team_name: string | null;
       timezone: string;
+      idle_threshold_minutes: number;
+      target_hours_per_day: number;
     }>({ path: "/me" }),
 
   updateMe: (body: Partial<{ name: string; position: string | null; team_id: string | null; timezone: string }>) =>
@@ -255,6 +257,8 @@ export const api = {
       role: "user" | "admin"; position: string | null;
       team_id: string | null; team_name: string | null;
       timezone: string;
+      idle_threshold_minutes: number;
+      target_hours_per_day: number;
     }>({ path: "/me", method: "PATCH", body }),
 
   changePassword: (currentPassword: string, newPassword: string) =>

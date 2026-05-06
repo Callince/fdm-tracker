@@ -206,6 +206,9 @@ async function refreshProfile() {
   try {
     const me = await api.getMe();
     const cur = auth.get().profile;
+    // Clamp the same way auth.login does — never trust raw server values.
+    const idle = Math.min(30, Math.max(1, Math.round(me.idle_threshold_minutes)));
+    const targetHours = Math.min(24, Math.max(1, me.target_hours_per_day));
     auth.setProfile({
       user_id: me.user_id,
       name: me.name,
@@ -215,9 +218,15 @@ async function refreshProfile() {
       team_id: me.team_id,
       team_name: me.team_name,
       timezone: me.timezone,
-      idle_threshold_minutes: cur?.idle_threshold_minutes ?? 5,
-      target_hours_per_day: cur?.target_hours_per_day ?? 8,
+      idle_threshold_minutes: idle,
+      target_hours_per_day: targetHours,
     });
+    // If the admin updated the org idle threshold, push it to the live
+    // monitor — without this the desktop kept using the value from /auth/login
+    // until the next sign-in.
+    if (cur?.idle_threshold_minutes !== idle) {
+      idleMonitor.setThreshold(idle);
+    }
     pushStatus();
   } catch {
     // non-fatal; UI keeps the last known profile
@@ -740,7 +749,6 @@ export function registerIpc() {
           timezone: updated.timezone,
         });
       }
-      if (body.timezone) idleMonitor.setThreshold(a.profile?.idle_threshold_minutes ?? 5);
       pushStatus();
       return { ok: true as const, data: updated };
     } catch (e) {

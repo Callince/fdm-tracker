@@ -55,6 +55,9 @@ export const idleMonitor = {
   setThreshold(minutes: number) {
     thresholdMinutes = minutes;
   },
+  getThresholdMinutes(): number {
+    return thresholdMinutes;
+  },
   onSample(l: Listener) {
     listeners.add(l);
     return () => listeners.delete(l);

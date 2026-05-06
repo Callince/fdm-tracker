@@ -3,8 +3,19 @@
  *
  * Every `sampleIntervalMs` (10s) the idle monitor emits a sample. We
  * accumulate active/idle seconds within the current 60s window. At bucket
- * close we drain the input counters and insert a row into the local SQLite
- * buffer. A separate timer drains the buffer to the server every
+ * close we drain the input counters and queue the bucket for flushing.
+ *
+ * Tolerance window: when a sample reports no input but `idleSeconds` is
+ * still below the configured threshold, we tag those seconds as **active**
+ * tentatively — the user might just be reading or thinking. If `idleSeconds`
+ * eventually crosses the threshold, the entire tolerance run is retroactively
+ * flipped to idle. To make that retroactive flip work across bucket
+ * boundaries we hold closed buckets in an in-memory queue for up to
+ * `threshold` seconds before writing to SQLite (`flushSettled`). This means
+ * a 5-minute idle stretch (with threshold=3min) shows up as 5 minutes of
+ * idle in the timeline, not 2 minutes after the threshold expired.
+ *
+ * A separate timer drains SQLite buckets to the server every
  * `syncIntervalMs` (60s) with exponential backoff on failure.
  */
 import { api, ApiError } from "./api";
@@ -18,17 +29,27 @@ import { log } from "./logger";
 type OnStatus = (msg: { online: boolean; lastOkAt: string | null; lastError: string | null; pending: number }) => void;
 type OnSampleTick = () => void;
 
-// Bucket-boundary timing uses a MONOTONIC clock so a DST jump or NTP
-// correction during a session can't make a bucket overlap or skip. The
-// wall-clock start is captured separately for the ISO timestamp written
-// to disk (user-meaningful time).
+interface BufferedBucket {
+  bucketStartMono: number;
+  bucketStartWall: number;
+  active: number;             // seconds tagged active so far
+  idle: number;               // seconds tagged idle so far
+  pendingTolerance: number;   // subset of `active` that came from the current
+                              // unresolved no-input gap and may flip to idle
+  keystrokes: number;
+  mouseEvents: number;
+  sessionId: string;
+  closed: boolean;            // true once it hit 60s; queued, no longer accumulating
+}
+
 function nowMono(): number {
   return Number(process.hrtime.bigint() / 1_000_000n);
 }
-let bucketStartMono = 0;           // monotonic ms — for elapsed math only
-let bucketStartWall = 0;           // epoch ms     — for ISO timestamps
-let activeAccum = 0;               // seconds this bucket has been "active"
-let idleAccum = 0;                 // seconds this bucket has been "idle"
+
+let currentBucket: BufferedBucket | null = null;
+let bufferQueue: BufferedBucket[] = [];
+let gapConfirmedIdle = false;     // true while sample.idleSeconds ≥ threshold
+
 let currentSessionId: string | null = null;
 let running = false;
 let syncTimer: NodeJS.Timeout | null = null;
@@ -36,9 +57,6 @@ let backoff = 0;
 let lastOkAt: string | null = null;
 let lastError: string | null = null;
 let statusListener: OnStatus | null = null;
-// Optional per-sample listener used by the IPC layer to push fresh status
-// to the renderer every ~10s, so live totals stay aligned with the wall
-// clock instead of lagging behind the 30s poller.
 let sampleTickListener: OnSampleTick | null = null;
 
 function emitStatus(online: boolean) {
@@ -51,65 +69,145 @@ function emitStatus(online: boolean) {
   });
 }
 
-function closeBucket(nowMono: number, nowWall: number) {
-  if (!currentSessionId || bucketStartMono === 0) return;
-  const totalElapsed = Math.round((nowMono - bucketStartMono) / 1000);
-  if (totalElapsed <= 0) return;
-  const counts = inputCounter.drain();
-  // First bucket — gets any tracked active/idle + the input counts.
-  const firstSize = Math.min(config.bucketSeconds, totalElapsed);
-  const firstActive = Math.min(activeAccum, firstSize);
-  const firstIdle = Math.max(0, firstSize - firstActive);
-  localDb.insertBucket({
-    session_id: currentSessionId,
-    bucket_start: new Date(bucketStartWall).toISOString(),
-    active_seconds: firstActive,
-    idle_seconds: firstIdle,
-    keystroke_count: counts.keystrokes,
-    mouse_event_count: counts.mouseEvents,
-  });
-  // Backfill any remaining time as idle-only 60s buckets. This covers
-  // sleep / lid-close / lock-screen gaps that span more than a single
-  // 60s bucket — without this, a 2-hour nap would collapse into a
-  // single 60s bucket and the timeline would have an empty stretch.
-  let cursor = bucketStartWall + firstSize * 1000;
-  let remaining = totalElapsed - firstSize;
+function newBucket(monoMs: number, wallMs: number, sid: string): BufferedBucket {
+  return {
+    bucketStartMono: monoMs,
+    bucketStartWall: wallMs,
+    active: 0,
+    idle: 0,
+    pendingTolerance: 0,
+    keystrokes: 0,
+    mouseEvents: 0,
+    sessionId: sid,
+    closed: false,
+  };
+}
+
+function flipAllToleranceToIdle() {
+  if (currentBucket && currentBucket.pendingTolerance > 0) {
+    currentBucket.active -= currentBucket.pendingTolerance;
+    currentBucket.idle += currentBucket.pendingTolerance;
+    currentBucket.pendingTolerance = 0;
+  }
+  for (const b of bufferQueue) {
+    if (b.pendingTolerance > 0) {
+      b.active -= b.pendingTolerance;
+      b.idle += b.pendingTolerance;
+      b.pendingTolerance = 0;
+    }
+  }
+}
+
+function clearAllToleranceAsActive() {
+  if (currentBucket) currentBucket.pendingTolerance = 0;
+  for (const b of bufferQueue) b.pendingTolerance = 0;
+}
+
+function flushSettled() {
+  // Settled = pendingTolerance is 0, so the classification will not change.
+  // Walk from the oldest; stop at the first un-settled bucket.
+  while (bufferQueue.length > 0 && bufferQueue[0].pendingTolerance === 0) {
+    const b = bufferQueue.shift()!;
+    localDb.insertBucket({
+      session_id: b.sessionId,
+      bucket_start: new Date(b.bucketStartWall).toISOString(),
+      active_seconds: Math.round(b.active),
+      idle_seconds: Math.round(b.idle),
+      keystroke_count: b.keystrokes,
+      mouse_event_count: b.mouseEvents,
+    });
+  }
+}
+
+function gapFillBuckets(startWall: number, totalSec: number, sid: string, gapIsIdle: boolean) {
+  let cursor = startWall;
+  let remaining = totalSec;
   while (remaining > 0) {
     const seconds = Math.min(config.bucketSeconds, remaining);
     localDb.insertBucket({
-      session_id: currentSessionId,
+      session_id: sid,
       bucket_start: new Date(cursor).toISOString(),
-      active_seconds: 0,
-      idle_seconds: seconds,
+      active_seconds: gapIsIdle ? 0 : seconds,
+      idle_seconds: gapIsIdle ? seconds : 0,
       keystroke_count: 0,
       mouse_event_count: 0,
     });
     cursor += seconds * 1000;
     remaining -= seconds;
   }
-  // advance the window; carry no residual
-  bucketStartMono = nowMono;
-  bucketStartWall = nowWall;
-  activeAccum = 0;
-  idleAccum = 0;
+}
+
+function closeAndQueueCurrent() {
+  if (!currentBucket) return;
+  // Drain input counters into the bucket at close time so they line up
+  // with the activity window they describe.
+  const counts = inputCounter.drain();
+  currentBucket.keystrokes += counts.keystrokes;
+  currentBucket.mouseEvents += counts.mouseEvents;
+  currentBucket.closed = true;
+  bufferQueue.push(currentBucket);
+  currentBucket = null;
 }
 
 function onSample(s: Sample) {
   if (!currentSessionId) return;
-  if (bucketStartMono === 0) {
-    bucketStartMono = s.monoMs;
-    bucketStartWall = s.timestamp;
+
+  if (!currentBucket) {
+    currentBucket = newBucket(s.monoMs, s.timestamp, currentSessionId);
   }
-  const elapsedSinceBucket = (s.monoMs - bucketStartMono) / 1000;
-  if (elapsedSinceBucket >= config.bucketSeconds) {
-    closeBucket(s.monoMs, s.timestamp);
-  }
-  // Each sample represents the interval [sample-sampleInterval, sample].
+
+  const elapsed = (s.monoMs - currentBucket.bucketStartMono) / 1000;
   const windowSeconds = config.sampleIntervalMs / 1000;
-  if (s.isActive) activeAccum += windowSeconds;
-  else idleAccum += windowSeconds;
-  // Fire the tick AFTER accumulating so listeners (the IPC pushStatus)
-  // see the latest counts. Cheap — at most one ipc.send per 10 seconds.
+  const thresholdSec = idleMonitor.getThresholdMinutes() * 60;
+
+  // Long-gap detection. If samples haven't fired for ≥ 2 buckets (e.g.
+  // suspend, lid close, frozen event loop), we close the current bucket
+  // with whatever it has, gap-fill the rest, and start a fresh bucket.
+  // The gap is classified by its total length: shorter than threshold
+  // → active (brief stall, user was almost certainly there); longer →
+  // idle (real away-from-keyboard).
+  if (elapsed >= 2 * config.bucketSeconds) {
+    const sid = currentBucket.sessionId;
+    const bucketEndWall = currentBucket.bucketStartWall + config.bucketSeconds * 1000;
+    closeAndQueueCurrent();
+    flushSettled();
+    const gapSec = Math.round(elapsed - config.bucketSeconds);
+    gapFillBuckets(bucketEndWall, gapSec, sid, gapSec >= thresholdSec);
+    currentBucket = newBucket(s.monoMs, s.timestamp, sid);
+    // The gap itself counts as the "no input gap" if idle. But the sample
+    // tells us authoritatively how long we've been idle so we just continue
+    // with the new bucket.
+  } else if (elapsed >= config.bucketSeconds) {
+    closeAndQueueCurrent();
+    currentBucket = newBucket(s.monoMs, s.timestamp, currentSessionId);
+  }
+
+  // Classify this 10s sample window.
+  if (s.idleSeconds < windowSeconds) {
+    // Input occurred within this window — gap (if any) ended below threshold.
+    // Tolerance was correct: those seconds stay tagged active.
+    clearAllToleranceAsActive();
+    gapConfirmedIdle = false;
+    currentBucket.active += windowSeconds;
+  } else if (s.idleSeconds >= thresholdSec) {
+    // No input + gap ≥ threshold → confirmed idle.
+    if (!gapConfirmedIdle) {
+      // First idle sample of this gap. Retroactively flip every accumulated
+      // tolerance second across the buffer + current bucket from active
+      // to idle — they were never really active, the user was already gone.
+      flipAllToleranceToIdle();
+      gapConfirmedIdle = true;
+    }
+    currentBucket.idle += windowSeconds;
+  } else {
+    // No input but still inside the threshold window. Tentatively active —
+    // we'll flip to idle if the gap eventually crosses threshold, or leave
+    // as active if the user comes back first.
+    currentBucket.active += windowSeconds;
+    currentBucket.pendingTolerance += windowSeconds;
+  }
+
+  flushSettled();
   sampleTickListener?.();
 }
 
@@ -122,8 +220,6 @@ async function drainToServer() {
   try {
     const res = await api.pushActivityBatch(buckets);
     const okIds = buckets.map((b) => b.client_event_id);
-    // Server dedupes; we mark all sent as synced regardless of accepted vs dedup
-    // (both outcomes mean the server has the data).
     localDb.markBucketsSynced(okIds);
     lastOkAt = new Date().toISOString();
     lastError = null;
@@ -149,6 +245,19 @@ function scheduleSync() {
   }, delay);
 }
 
+function flushAllPending() {
+  // Force-flush every buffered bucket. Any unresolved tolerance is treated
+  // as active — we don't have lookahead beyond this moment, so keeping
+  // tentatively-active samples as active is the conservative choice.
+  clearAllToleranceAsActive();
+  if (currentBucket && (currentBucket.active > 0 || currentBucket.idle > 0)) {
+    closeAndQueueCurrent();
+  } else {
+    currentBucket = null;
+  }
+  flushSettled();
+}
+
 export const syncWorker = {
   start(idleThresholdMinutes: number, onStatus: OnStatus) {
     if (running) return;
@@ -163,6 +272,7 @@ export const syncWorker = {
 
   stop() {
     running = false;
+    flushAllPending();
     if (syncTimer) clearTimeout(syncTimer);
     syncTimer = null;
     idleMonitor.stop();
@@ -170,21 +280,14 @@ export const syncWorker = {
   },
 
   setSession(sessionId: string | null) {
-    // Close current bucket before switching sessions so buckets never straddle.
-    if (bucketStartMono !== 0) closeBucket(nowMono(), Date.now());
+    // Close out current session's pending data before switching so the
+    // tail end of the prior session doesn't bleed into the new one.
+    flushAllPending();
     currentSessionId = sessionId;
-    if (sessionId) {
-      bucketStartMono = nowMono();
-      bucketStartWall = Date.now();
-    } else {
-      bucketStartMono = 0;
-      bucketStartWall = 0;
-    }
-    activeAccum = 0;
-    idleAccum = 0;
-    inputCounter.drain(); // reset counters on session switch
-    // Reset sync backoff so a fresh session doesn't inherit a long (up to 30m)
-    // delay left over from an earlier offline stretch.
+    currentBucket = null;
+    bufferQueue = [];
+    gapConfirmedIdle = false;
+    inputCounter.drain();
     backoff = 0;
     lastError = null;
   },
@@ -194,22 +297,31 @@ export const syncWorker = {
   },
 
   forceFlushBucket() {
-    if (currentSessionId && bucketStartMono !== 0) closeBucket(nowMono(), Date.now());
+    if (currentSessionId) flushAllPending();
   },
 
   async forceSync() {
     await drainToServer();
   },
 
-  /** Read-only view of the in-progress bucket — used by status() so the
-   * dashboard's active/idle totals reflect time we've measured but not yet
-   * flushed to SQLite. Values are floats (sample-interval granularity). */
+  /** Read-only view of in-flight bucket data — both the still-accumulating
+   * current bucket and any queued-but-unflushed buckets. Callers (e.g.
+   * status()) sum this with localDb.todayBucketTotals to compute live totals
+   * that include data not yet written to SQLite. */
   currentBucketAccum(): { active: number; idle: number } {
-    return { active: activeAccum, idle: idleAccum };
+    let a = 0;
+    let i = 0;
+    if (currentBucket) {
+      a += currentBucket.active;
+      i += currentBucket.idle;
+    }
+    for (const b of bufferQueue) {
+      a += b.active;
+      i += b.idle;
+    }
+    return { active: a, idle: i };
   },
 
-  /** Subscribe to the per-sample tick (~10s). Used by IPC to call pushStatus
-   * so the renderer's live totals tick alongside the wall-clock timer. */
   onSampleTick(cb: OnSampleTick | null) {
     sampleTickListener = cb;
   },
@@ -219,8 +331,6 @@ export const syncWorker = {
   pending(): number { return localDb.pendingCount(); },
 };
 
-// Auth state helper for the main entry — ensures we never start tracking
-// without a valid login.
 export function hasValidAuth(): boolean {
   const s = auth.get();
   return !!(s.accessToken && s.deviceSecret && s.profile);
