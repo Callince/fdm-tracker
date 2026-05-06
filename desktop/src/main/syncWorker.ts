@@ -51,6 +51,11 @@ let bufferQueue: BufferedBucket[] = [];
 let gapConfirmedIdle = false;     // true while sample.idleSeconds ≥ threshold
 
 let currentSessionId: string | null = null;
+// While the user is on a break we suspend bucket accumulation entirely —
+// otherwise the active/idle seconds recorded during break time would double-
+// count against the break entry itself, inflating today's totals on the
+// dashboard (the calendar pulls server data that doesn't have this issue).
+let onBreak = false;
 let running = false;
 let syncTimer: NodeJS.Timeout | null = null;
 let backoff = 0;
@@ -151,6 +156,13 @@ function closeAndQueueCurrent() {
 
 function onSample(s: Sample) {
   if (!currentSessionId) return;
+  if (onBreak) {
+    // Drain so post-break buckets don't pick up keystrokes typed during the
+    // break (e.g. chatting in another app).
+    inputCounter.drain();
+    sampleTickListener?.();
+    return;
+  }
 
   if (!currentBucket) {
     currentBucket = newBucket(s.monoMs, s.timestamp, currentSessionId);
@@ -287,9 +299,31 @@ export const syncWorker = {
     currentBucket = null;
     bufferQueue = [];
     gapConfirmedIdle = false;
+    onBreak = false;
     inputCounter.drain();
     backoff = 0;
     lastError = null;
+  },
+
+  /** Suspend / resume bucket accumulation around a break. On suspend we
+   * close the in-flight bucket so its partial seconds aren't lost; on
+   * resume the next sample will open a fresh bucket. */
+  setBreak(value: boolean) {
+    if (value === onBreak) return;
+    if (value) {
+      clearAllToleranceAsActive();
+      if (currentBucket && (currentBucket.active > 0 || currentBucket.idle > 0)) {
+        closeAndQueueCurrent();
+      } else {
+        currentBucket = null;
+      }
+      flushSettled();
+    } else {
+      gapConfirmedIdle = false;
+      currentBucket = null;
+    }
+    inputCounter.drain();
+    onBreak = value;
   },
 
   currentSession(): string | null {

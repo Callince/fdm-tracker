@@ -324,6 +324,7 @@ async function autoStartBreak() {
     currentBreakId = r.break_id;
     currentBreakStartedAt = now;
     autoBreakId = r.break_id;
+    syncWorker.setBreak(true);
     notify("Work auto-paused", "Idle for a while — FDM started a break. Move your mouse to resume.", showMainWindow);
   } catch (e) {
     log.error("[auto-break:start]", e);
@@ -340,6 +341,7 @@ async function autoEndBreak() {
   currentBreakId = null;
   currentBreakStartedAt = null;
   autoBreakId = null;
+  syncWorker.setBreak(false);
   notify("Welcome back", "Auto-break ended — tracking resumed.", showMainWindow);
   pushStatus();
   void refreshTodayTotals();
@@ -503,6 +505,7 @@ async function doStartBreak() {
     const r = await api.startBreak(currentSessionId, now);
     currentBreakId = r.break_id;
     currentBreakStartedAt = now;
+    syncWorker.setBreak(true);
   } catch (e) { log.error("[break:start]", e); }
   pushStatus();
   void refreshTodayTotals();
@@ -527,6 +530,7 @@ async function doEndBreak() {
     currentBreakId = null;
     currentBreakStartedAt = null;
     autoBreakId = null;
+    syncWorker.setBreak(false);
   }
   pushStatus();
   void refreshTodayTotals();
