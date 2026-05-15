@@ -16,6 +16,12 @@ name: fdm-tracker
 
 services:
   api:
+    # The image runs as non-root `appuser` (uid 1000), but a Docker
+    # named volume is created root-owned — appuser then can't create
+    # /data/fdm.db and the container crash-loops (502). For this
+    # stopgap we run the container as root so it can write the volume.
+    # Accepted trade-off; reverting to the Postgres compose drops it.
+    user: "0:0"
     environment:
       # `environment` overrides the same key from env_file (.env).
       # 4 slashes = absolute path /data/fdm.db inside the container.
