@@ -38,3 +38,12 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Local SQLite DB exports — contain all employee PII + password hashes
+*.db
+*.sqlite
+*.sqlite3
+fdm_local.db
+
+# Desktop app data extraction — contains activity data + device tokens
+desktop-data-export/
