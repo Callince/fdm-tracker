@@ -5,9 +5,9 @@ The desktop Electron app buffers 60-second activity buckets locally
 ``desktop-data-export/csv/activity_buckets.csv``. That CSV carries the
 activity numbers and a client-generated ``session_id``, but **no
 identity** — the real ``users``/``devices``/``work_sessions`` rows were
-created server-side and live in the (now-unreachable) Postgres. The
-live ``/activity/batch`` ingest can't be reused: it uses a
-Postgres-only ``ON CONFLICT``.
+created server-side. The live ``/activity/batch`` ingest can't be
+reused for a bulk restore: it requires an authenticated, HMAC-signed
+device request per batch.
 
 This CLI reconstructs the missing identity so the data lands in
 ``activity_logs``:

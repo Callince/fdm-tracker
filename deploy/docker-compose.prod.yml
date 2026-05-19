@@ -6,11 +6,25 @@ services:
       context: ../backend
     restart: unless-stopped
     env_file: .env
+    # The image runs as non-root `appuser` (uid 1000), but the Docker
+    # named volume is created root-owned — appuser then can't create
+    # /data/fdm.db and the container crash-loops (502). Run as root so
+    # it can write the volume.
+    user: "0:0"
+    environment:
+      # `environment` overrides DATABASE_URL from env_file (.env).
+      # 4 slashes = absolute path /data/fdm.db inside the container.
+      DATABASE_URL: "sqlite:////data/fdm.db"
+    volumes:
+      - fdm_sqlite:/data
     expose:
       - "8000"
+    # init_db creates the schema from the ORM (idempotent, never drops
+    # data). 1 worker: SQLite is single-writer; multiple workers contend
+    # for the file lock.
     command: >
-      sh -c "alembic upgrade head &&
-             uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2"
+      sh -c "python -m app.cli.init_db &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1"
 
   admin:
     build:
@@ -37,5 +51,6 @@ services:
       - admin
 
 volumes:
+  fdm_sqlite:
   caddy_data:
   caddy_config:

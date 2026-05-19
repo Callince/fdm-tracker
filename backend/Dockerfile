@@ -7,8 +7,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        build-essential libpq-dev curl \
+# Only curl is needed (healthcheck). SQLite ships with Python's stdlib;
+# no compiler or libpq now that psycopg2 is gone.
+RUN apt-get update && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt ./

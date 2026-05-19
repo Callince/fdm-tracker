@@ -1,9 +1,8 @@
-"""Create all tables on the configured database via SQLAlchemy.
+"""Create all tables on the SQLite database via SQLAlchemy.
 
-For the local SQLite path only — production uses Alembic
-(``alembic upgrade head``), whose migrations emit Postgres-only DDL and
-will not run on SQLite. Run this against a ``sqlite://`` DATABASE_URL to
-materialise the full schema from the ORM models instead.
+This is the schema tool: SQLite is the only database and there are no
+migrations — the schema is materialised from the ORM models. Idempotent
+(``create_all`` only creates missing tables) and run on every boot.
 
 Usage (DATABASE_URL must point at the target):
     python -m app.cli.init_db
@@ -23,8 +22,7 @@ def main() -> int:
     if backend != "sqlite":
         print(
             f"refusing: DATABASE_URL is '{backend}', not sqlite. "
-            "Production schema is managed by Alembic — run "
-            "`alembic upgrade head` instead.",
+            "This project runs on SQLite only — set a sqlite:// URL.",
             file=sys.stderr,
         )
         return 2

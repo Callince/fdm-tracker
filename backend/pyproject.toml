@@ -8,7 +8,6 @@ requires-python = ">=3.11"
 strict = true
 python_version = "3.11"
 plugins = ["pydantic.mypy"]
-exclude = ["alembic/versions/"]
 
 [tool.ruff]
 line-length = 100

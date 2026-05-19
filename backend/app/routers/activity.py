@@ -6,7 +6,7 @@ from typing import Annotated, Set, Tuple
 
 from fastapi import APIRouter, Depends, status
 from sqlalchemy import and_, select
-from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
 from ..database import get_db
@@ -69,8 +69,13 @@ def ingest_batch(
 
     inserted = 0
     if rows:
-        stmt = pg_insert(ActivityLog).values(rows)
-        stmt = stmt.on_conflict_do_nothing(constraint="uq_activity_dedup")
+        # Dedup on the (device_id, client_event_id) unique index so a
+        # client re-sending a batch is idempotent. SQLite's UPSERT
+        # targets the conflicting index by its columns.
+        stmt = sqlite_insert(ActivityLog).values(rows)
+        stmt = stmt.on_conflict_do_nothing(
+            index_elements=["device_id", "client_event_id"]
+        )
         result = db.execute(stmt)
         inserted = result.rowcount or 0
 

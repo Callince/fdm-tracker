@@ -1,4 +1,5 @@
-"""SQLAlchemy ORM models. Import order matters for Alembic autogenerate."""
+"""SQLAlchemy ORM models. Importing this package registers every model
+on ``Base.metadata`` so ``init_db`` can create the full schema."""
 from .user import User
 from .device import Device
 from .session import WorkSession
