@@ -13,6 +13,13 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 _BACKEND_DIR = Path(__file__).resolve().parent.parent
 _ENV_FILE = _BACKEND_DIR / ".env"
 
+# SQLite is the system of record. If DATABASE_URL is not set in the
+# environment / .env, fall back to a local SQLite file next to the
+# backend so the app runs with zero external DB. Postgres is still
+# fully supported — set a postgresql:// DATABASE_URL to use it again
+# (see app/database.py, which auto-detects the dialect).
+_DEFAULT_SQLITE_URL = f"sqlite:///{(_BACKEND_DIR / 'fdm_local.db').as_posix()}"
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -25,7 +32,7 @@ class Settings(BaseSettings):
     app_name: str = "fdm-tracker"
     log_level: str = "INFO"
 
-    database_url: str
+    database_url: str = _DEFAULT_SQLITE_URL
     jwt_secret: str
     jwt_algorithm: str = "HS256"
     access_token_ttl_min: int = 720

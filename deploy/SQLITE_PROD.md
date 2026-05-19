@@ -1,17 +1,17 @@
-# Production SQLite stopgap — deploy runbook
+# Production SQLite — deploy runbook
 
-> **This is a stopgap, not a fix.** It serves the app from a single
-> SQLite file on the droplet because the Postgres DB is unavailable.
-> Trade-offs you are accepting:
-> - **Fresh, empty database** — no historical users/teams/activity.
->   Every employee re-registers; old data stays locked in Supabase/Neon
->   until those are restored.
+> **SQLite is the system of record.** The app serves from a single
+> SQLite file on a persistent named volume on the droplet. Properties
+> of this setup:
 > - **Single writer** — runs 1 uvicorn worker; heavy concurrent client
 >   pushes will serialise (WAL + 10s busy_timeout soften this).
 > - **No Alembic** — schema comes from the ORM (`init_db`); future
->   schema changes won't migrate on SQLite.
+>   schema changes are applied by `init_db` on boot, not migrations.
+> - **Unless data was migrated in**, the DB starts fresh — employees
+>   re-register. To preserve old data, run `app.cli.export_sqlite`
+>   against a reachable Postgres first (see backend/SQLITE_EXPORT.md).
 >
-> Plan to move back to Postgres (see "Revert", below).
+> Postgres remains fully supported as a rollback (see "Revert", below).
 
 ## 1. Get the code onto the droplet
 

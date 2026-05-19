@@ -1,17 +1,20 @@
-# SQLite stopgap override for production.
+# SQLite production override.
 #
-# Applied ON TOP of docker-compose.prod.yml when the Postgres DB is
-# unavailable and you need the app serving from a local SQLite file on
-# the droplet. This is a deliberate stopgap — see deploy/SQLITE_PROD.md.
+# SQLite is the system of record. Always apply this ON TOP of
+# docker-compose.prod.yml so the app serves from a SQLite file on a
+# persistent named volume on the droplet — see deploy/SQLITE_PROD.md.
 #
 #   docker compose -f docker-compose.prod.yml -f docker-compose.sqlite.yml \
 #     --env-file .env up -d --build
 #
-# Changes vs. prod:
+# Changes vs. the (now-dormant) Postgres path in docker-compose.prod.yml:
 #   - DATABASE_URL -> sqlite file on a persistent named volume
 #   - skip Alembic (Postgres-only migrations); init schema via the ORM
 #   - 1 uvicorn worker (SQLite is single-writer; multiple workers
 #     contend for the file lock)
+#
+# Postgres remains supported for rollback: set a postgresql:// DATABASE_URL
+# in .env and deploy WITHOUT this override (see SQLITE_PROD.md "Revert").
 name: fdm-tracker
 
 services:
